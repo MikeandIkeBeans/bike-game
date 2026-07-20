@@ -1,4 +1,4 @@
-# Trail Rush project instructions
+# Bike Game project instructions
 
 ## Game model
 

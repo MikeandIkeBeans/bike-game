@@ -1,6 +1,6 @@
-# Trail Rush
+# Bike Game
 
-Trail Rush is an iPhone landscape, side-view downhill-biking prototype built with SwiftUI and SpriteKit. It is an early physics vertical slice, not a finished game or a full bicycle simulation.
+Bike Game is an iPhone landscape, side-view downhill-biking prototype built with SwiftUI and SpriteKit. It is an early physics vertical slice, not a finished game or a full bicycle simulation.
 
 ## Current status
 

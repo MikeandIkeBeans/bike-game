@@ -88,7 +88,7 @@ struct TerrainGrammarProfile {
     let benchWeight: CGFloat
 }
 
-/// The only place to tune Trail Rush's gameplay feel and physics behaviour.
+/// The only place to tune Bike Game's gameplay feel and physics behaviour.
 /// Keep visual styling and layout constants out of this file.
 enum GameTuning {
     enum Simulation {

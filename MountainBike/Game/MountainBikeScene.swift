@@ -1000,7 +1000,7 @@
     private func showIntroOverlay() {
         overlay.isHidden = false
         overlay.alpha = 1
-        overlayTitle.text = "TRAIL RUSH"
+        overlayTitle.text = "BIKE GAME"
         overlaySubtitle.text = "PINE RIDGE  •  PHYSICS PROTOTYPE"
         overlayPrompt.text = "HOLD PEDAL TO RIDE  •  LEAN LEFT / RIGHT"
     }
