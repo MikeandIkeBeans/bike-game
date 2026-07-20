@@ -17,6 +17,12 @@ Bike Game is an iPhone landscape, side-view downhill-biking prototype built with
 - Controls support multitouch, so PEDAL can be combined with either lean direction.
 - Releasing PEDAL does not brake; gravity, momentum, and terrain contacts determine movement.
 
+## AI-assisted development
+
+This prototype was developed with assistance from **OpenAI Codex**, using **GPT-5.6**. Codex was used to inspect the SpriteKit project, iterate on bike visuals and physics experiments, refine code and documentation, and run simulator build checks.
+
+The project remains an experimental physics prototype. AI assistance does not imply that the bicycle behavior is final, fully realistic, or fully playtested.
+
 ## Requirements
 
 - Xcode with the iOS 17 SDK (deployment target: iOS 17.0)
