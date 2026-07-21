@@ -72,6 +72,16 @@ struct DownhillStepDownProfile {
     let exitSlope: ClosedRange<CGFloat>
 }
 
+/// One smooth, force-driven event in the isolated suspension-rig endurance
+/// sweep. Keeping the program data here makes the lab repeatable without
+/// coupling it to the playable hill scene.
+struct SuspensionRigStressPulse {
+    let label: String
+    let startTime: TimeInterval
+    let duration: TimeInterval
+    let axleForce: CGVector
+}
+
 /// One broad terrain phrase. The grammar chooses the relative frequency of
 /// terrain forms while the individual feature profiles keep every instance
 /// physically varied.
@@ -623,6 +633,194 @@ enum GameTuning {
         static let speedKilometersPerHourScale: CGFloat = 0.22
     }
 
+    /// Physics-only values for the isolated rear-suspension lab. These are
+    /// deliberately separate from the one-body bike constants above: nothing
+    /// in the hill scene consumes this topology yet.
+    enum SuspensionRig {
+        static let groundY: CGFloat = 62
+        static let groundOverhang: CGFloat = 140
+        static let chassisHorizontalPlacement: CGFloat = 0.37
+
+        static let wheelRadius: CGFloat = 38
+        static let initialWheelClearance: CGFloat = 14
+        static let swingarmLength: CGFloat = 162
+        static let swingarmThickness: CGFloat = 14
+        /// The arm mesh is built at this angle while the dynamic body's
+        /// rotation begins at zero, keeping pin-joint travel limits relative
+        /// to a readable neutral position.
+        static let neutralSwingarmAngle: CGFloat = -0.40
+
+        static let chassisSize = CGSize(width: 166, height: 72)
+        static let chassisPivotOffset = CGPoint(x: -24, y: -36)
+        static let chassisShockMountOffset = CGPoint(x: -48, y: 44)
+        static let swingarmShockMountDistance: CGFloat = 92
+
+        static let swingarmMass: CGFloat = 0.70
+        static let rearWheelMass: CGFloat = 0.85
+        static let componentLinearDamping: CGFloat = 0.08
+        static let swingarmAngularDamping: CGFloat = 0.42
+        static let wheelAngularDamping: CGFloat = 0.10
+        static let wheelFriction: CGFloat = 1.10
+        static let wheelRestitution: CGFloat = 0
+
+        /// Limits are relative to the arm's neutral body rotation. They are
+        /// the hard rebound and compression stops for the fixed-pivot rig.
+        /// Flat ground normally prevents full rebound, while the top-out
+        /// strap protects the spring during an unloaded stress pulse.
+        static let lowerTravelAngle: CGFloat = -0.22
+        static let upperTravelAngle: CGFloat = 0.28
+        static let pivotFrictionTorque: CGFloat = 0.08
+        static let springFrequency: CGFloat = 0.50
+        static let springDamping: CGFloat = 0.70
+        static let topOutStrapExtraLength: CGFloat = 18
+
+        /// A single automatic test run starts with a passive settle, applies
+        /// smooth force envelopes at the axle, then waits for a
+        /// sustained, low-energy settle before reporting its result.
+        static let initialSettleDuration: TimeInterval = 2.0
+        static let finalSettleTimeout: TimeInterval = 3.0
+        static let finalSettleWindow: TimeInterval = 0.5
+        static let finalSettleMaximumSpeed: CGFloat = 4
+        static let finalSettleMaximumAngularSpeed: CGFloat = 0.12
+        static let finalSettleAngleTolerance: CGFloat = 0.03
+        static let finalSettleShockLengthTolerance: CGFloat = 3
+        static let stressPulses: [SuspensionRigStressPulse] = [
+            SuspensionRigStressPulse(
+                label: "VERTICAL LOAD 1",
+                startTime: 0,
+                duration: 0.30,
+                axleForce: CGVector(dx: 0, dy: 260)
+            ),
+            SuspensionRigStressPulse(
+                label: "VERTICAL LOAD 2",
+                startTime: 0.85,
+                duration: 0.30,
+                axleForce: CGVector(dx: 0, dy: 360)
+            ),
+            SuspensionRigStressPulse(
+                label: "VERTICAL LOAD 3",
+                startTime: 1.70,
+                duration: 0.30,
+                axleForce: CGVector(dx: 0, dy: 460)
+            ),
+            SuspensionRigStressPulse(
+                label: "SIDE LOAD L",
+                startTime: 2.70,
+                duration: 0.20,
+                axleForce: CGVector(dx: 180, dy: 0)
+            ),
+            SuspensionRigStressPulse(
+                label: "SIDE LOAD R",
+                startTime: 3.35,
+                duration: 0.20,
+                axleForce: CGVector(dx: -180, dy: 0)
+            ),
+            SuspensionRigStressPulse(
+                label: "VERTICAL PEAK",
+                startTime: 4.10,
+                duration: 0.35,
+                axleForce: CGVector(dx: 0, dy: 560)
+            )
+        ]
+        static let maximumActuatorForce: CGFloat = 560
+        static let stressProgramDuration: TimeInterval = 5.0
+        static let hudRefreshInterval: TimeInterval = 0.10
+
+        /// The lab treats any of these as a failed numerical/constraint run;
+        /// the figures are intentionally looser than normal solver jitter.
+        static let maximumPivotAnchorError: CGFloat = 4
+        static let maximumAxleAnchorError: CGFloat = 4
+        static let maximumWheelPenetration: CGFloat = 3
+        static let maximumGroundTransitionsPerHalfSecond = 6
+        static let travelLimitTolerance: CGFloat = 0.035
+
+        /// These are numerical safeguards only. Reaching a cap is recorded as
+        /// a failed stress run rather than silently treated as normal motion.
+        static let maximumComponentLinearSpeed: CGFloat = 650
+        static let maximumSwingarmAngularVelocity: CGFloat = 15
+        static let maximumWheelAngularVelocity: CGFloat = 22
+    }
+
+    /// A flat-ground playable prototype that shares the rear-suspension
+    /// topology with the fixture, while deliberately staying independent from
+    /// the one-body hill bike. The values below do not affect Trail Ride or
+    /// the fixed-pivot stress fixture.
+    enum SuspensionRide {
+        static let groundY: CGFloat = 62
+        static let groundOverhang: CGFloat = 260
+        static let chassisHorizontalPlacement: CGFloat = 0.40
+
+        static let wheelRadius: CGFloat = 38
+        static let initialWheelClearance: CGFloat = 0
+        static let swingarmLength: CGFloat = 162
+        static let swingarmThickness: CGFloat = 14
+        /// The rear axle sits behind the chassis pivot while the bike faces +x.
+        static let neutralSwingarmAngle: CGFloat = -CGFloat.pi + 0.40
+
+        static let chassisSize = CGSize(width: 166, height: 72)
+        static let chassisPivotOffset = CGPoint(x: -24, y: -36)
+        static let chassisShockMountOffset = CGPoint(x: -48, y: 44)
+        static let swingarmShockMountDistance: CGFloat = 92
+        /// A rigid visual fork ends here; its pin joint is the front axle.
+        static let frontAxleOffset = CGPoint(x: 168, y: -99)
+
+        static let chassisMass: CGFloat = 3.4
+        static let swingarmMass: CGFloat = 0.70
+        static let rearWheelMass: CGFloat = 0.85
+        static let frontWheelMass: CGFloat = 0.85
+        static let chassisLinearDamping: CGFloat = 0.35
+        static let chassisAngularDamping: CGFloat = 1.30
+        static let componentLinearDamping: CGFloat = 0.25
+        static let swingarmAngularDamping: CGFloat = 0.70
+        static let wheelAngularDamping: CGFloat = 0.25
+        static let wheelFriction: CGFloat = 1.10
+        static let wheelRestitution: CGFloat = 0
+
+        /// Limits are relative to the moving chassis, not world space. Flat
+        /// ground supports the rear wheel slightly beyond the fixed fixture's
+        /// unloaded rebound position, so Ride uses a wider rebound stop.
+        static let lowerTravelAngle: CGFloat = -0.32
+        static let upperTravelAngle: CGFloat = 0.28
+        static let pivotFrictionTorque: CGFloat = 0.08
+        static let springFrequency: CGFloat = 0.50
+        static let springDamping: CGFloat = 0.70
+        static let topOutStrapExtraLength: CGFloat = 18
+
+        /// Pedaling is a bounded rear-axle force, gated by a real rear-wheel
+        /// contact. Lean is a bounded target-angle controller on the chassis.
+        static let pedalDriveForce: CGFloat = 30
+        static let brakeForce: CGFloat = 60
+        static let pedalAssistSpeed: CGFloat = 230
+        static let coastingDragForcePerSpeed: CGFloat = 3.2
+        static let endStopInset: CGFloat = 32
+        static let endStopHeight: CGFloat = 120
+        static let driveBoundaryFadeDistance: CGFloat = 100
+        static let leanMinimumSpeed: CGFloat = 18
+        static let leanFullSpeed: CGFloat = 130
+        static let leanMaximumOffset: CGFloat = 0.24
+        static let leanResponseTorque: CGFloat = 110
+        static let leanDampingTorque: CGFloat = 16
+        static let uprightResponseTorque: CGFloat = 60
+        static let uprightDampingTorque: CGFloat = 14
+        static let maximumLeanTorque: CGFloat = 48
+
+        static let hudRefreshInterval: TimeInterval = 0.10
+        static let visibleLaneMargin: CGFloat = 52
+        static let maximumPivotAnchorError: CGFloat = 4
+        static let maximumRearAxleAnchorError: CGFloat = 4
+        static let maximumFrontAxleAnchorError: CGFloat = 4
+        static let maximumWheelPenetration: CGFloat = 3
+        static let maximumGroundTransitionsPerHalfSecond = 6
+
+        /// These remain hard numerical guards rather than hidden handling
+        /// assists. A guard hit asks the player to reset the lab.
+        static let maximumChassisLinearSpeed: CGFloat = 360
+        static let maximumComponentLinearSpeed: CGFloat = 420
+        static let maximumChassisAngularVelocity: CGFloat = 6
+        static let maximumSwingarmAngularVelocity: CGFloat = 15
+        static let maximumWheelAngularVelocity: CGFloat = 22
+    }
+
     enum Camera {
         static let baseLookAhead: CGFloat = 120
         static let velocityLookAheadFactor: CGFloat = 0.18
@@ -636,4 +834,10 @@ enum GameTuning {
 enum PhysicsCategory {
     static let bike: UInt32 = 1 << 0
     static let terrain: UInt32 = 1 << 1
+    static let suspensionRigGround: UInt32 = 1 << 2
+    static let suspensionRigChassis: UInt32 = 1 << 3
+    static let suspensionRigSwingarm: UInt32 = 1 << 4
+    static let suspensionRigWheel: UInt32 = 1 << 5
+    static let suspensionRigStand: UInt32 = 1 << 6
+    static let suspensionRigFrontWheel: UInt32 = 1 << 7
 }
