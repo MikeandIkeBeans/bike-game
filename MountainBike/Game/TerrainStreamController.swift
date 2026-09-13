@@ -148,6 +148,16 @@ final class TerrainStreamController {
             ]
         }
 
+        /// The grammar at `grammarIndices[0]` — this biome's own zone
+        /// grammar — used as an immediate, biome-correct replacement when
+        /// the active grammar isn't available right after entering a new
+        /// biome. `TerrainGrammar.allCases.filter` does not preserve
+        /// `grammarIndices`' order, so that array's first element can't be
+        /// used for this; it has to be looked up directly by rawValue.
+        var signatureGrammar: TerrainGrammar {
+            TerrainGrammar(rawValue: rawValue) ?? .summitSpine
+        }
+
         var snowCovered: Bool {
             rawValue <= TerrainBiome.glacialMoraine.rawValue
         }
@@ -219,7 +229,17 @@ final class TerrainStreamController {
             let uphillSlopeLimit = maximumUphillSlope
                 ?? GameTuning.Terrain.maximumRollableUphillSlope
             self.startSlope = min(startSlope, uphillSlopeLimit)
-            self.endSlope = min(endSlope, uphillSlopeLimit)
+            // A short segment can't be handed a steep incoming slope and
+            // asked to reach an uphill target in too little horizontal room
+            // — that's a tight, high-curvature dip a fixed wheelbase can't
+            // cross cleanly. Long, purpose-built climbs clear this easily,
+            // so it only constrains the short, incidental transition
+            // between features (e.g. a chute exit feeding straight into the
+            // next feature's entry).
+            let length = max(end.x - start.x, 1)
+            let reachableEndSlope = self.startSlope
+                + length * GameTuning.Terrain.maximumUphillSlopeSwingPerLength
+            self.endSlope = min(endSlope, uphillSlopeLimit, reachableEndSlope)
             self.isLinear = isLinear
             self.isSurface = isSurface
         }
@@ -364,6 +384,7 @@ final class TerrainStreamController {
     ) -> (chunk: TerrainChunk, cursor: TerrainCursor) {
         let generated = terrainSegments(forChunk: index, from: cursor)
         let points = sampledPoints(from: generated.segments)
+        precondition(!points.isEmpty, "A terrain chunk must sample at least one point.")
         let surfaceRuns = sampledSurfaceRuns(from: generated.segments)
         precondition(
             surfaceRuns.allSatisfy { $0.count > 1 },
@@ -537,7 +558,7 @@ final class TerrainStreamController {
         let availableGrammars = TerrainGrammar.allCases.filter { $0.isAvailable(in: biome) }
         precondition(!availableGrammars.isEmpty, "Every terrain biome needs at least one grammar.")
         guard availableGrammars.contains(cursor.activeGrammar) else {
-            return availableGrammars[0]
+            return biome.signatureGrammar
         }
         guard cursor.grammarFeatureCount >= cursor.activeGrammar.profile.minimumFeatureCount,
               random.value(in: 0...1) < GameTuning.Terrain.grammarTransitionChance else {
@@ -787,11 +808,18 @@ final class TerrainStreamController {
             x: releaseEnd.x + landingEntryLength,
             y: landingEntryY
         )
+        // landingEntry.x is a chain of independently-random offsets from
+        // crest.x, not a fraction of `length`, so it can land past the
+        // nominal `length + lipLandingRunout` target. Without this max, the
+        // final segment could end up running backward (stepDownFeature's
+        // landing/exit has the equivalent guard).
+        let exitX = max(
+            start.x + length + GameTuning.Terrain.lipLandingRunout,
+            landingEntry.x + GameTuning.Terrain.lipLandingRunout
+        )
         let exit = CGPoint(
-            x: start.x + length + GameTuning.Terrain.lipLandingRunout,
-            y: landingEntry.y
-                + (start.x + length + GameTuning.Terrain.lipLandingRunout - landingEntry.x)
-                    * GameTuning.Terrain.lipLandingRunoutSlope
+            x: exitX,
+            y: landingEntry.y + (exitX - landingEntry.x) * GameTuning.Terrain.lipLandingRunoutSlope
         )
         let troughSlope = random.value(in: profile.troughSlope)
         let crestSlope = min(
@@ -949,6 +977,10 @@ final class TerrainStreamController {
         var sampled: [CGPoint] = []
 
         for segment in segments {
+            precondition(
+                segment.end.x >= segment.start.x,
+                "Terrain segment must not move backward in x: \(segment.start) -> \(segment.end)"
+            )
             let span = segment.end.x - segment.start.x
             let averageSlope = (segment.end.y - segment.start.y) / max(span, 1)
             let steepestSlope = max(abs(segment.startSlope), abs(segment.endSlope), abs(averageSlope))
@@ -1053,6 +1085,42 @@ final class TerrainStreamController {
         return (palette.edge, palette.fill)
     }
 
+    /// Binary search for the first point whose x is >= `x`. `points` must be
+    /// sorted ascending by x, which every terrain point array and surface
+    /// run in this controller is by construction. Returns `points.count` if
+    /// every point's x is less than `x`.
+    private func firstPointIndex(in points: [CGPoint], atOrAfter x: CGFloat) -> Int {
+        var low = 0
+        var high = points.count
+        while low < high {
+            let mid = (low + high) / 2
+            if points[mid].x < x {
+                low = mid + 1
+            } else {
+                high = mid
+            }
+        }
+        return low
+    }
+
+    /// Binary search for the first chunk whose end reaches `x`. Chunks
+    /// stream out in increasing, contiguous, non-overlapping x order, so
+    /// this always lands on the chunk that would contain `x`, if any chunk
+    /// still does.
+    private func firstChunkIndex(atOrAfter x: CGFloat) -> Int {
+        var low = 0
+        var high = terrainChunks.count
+        while low < high {
+            let mid = (low + high) / 2
+            if terrainChunks[mid].endX < x {
+                low = mid + 1
+            } else {
+                high = mid
+            }
+        }
+        return low
+    }
+
     func terrainHeight(at x: CGFloat) -> CGFloat {
         terrainHeight(in: terrainPoints, at: x)
     }
@@ -1062,15 +1130,15 @@ final class TerrainStreamController {
         if x <= first.x { return first.y }
         if x >= last.x { return last.y }
 
-        for index in 1..<points.count {
-            let previous = points[index - 1]
-            let next = points[index]
-            if x <= next.x {
-                let t = (x - previous.x) / (next.x - previous.x)
-                return previous.y + (next.y - previous.y) * t
-            }
-        }
-        return last.y
+        let index = firstPointIndex(in: points, atOrAfter: x)
+        let previous = points[index - 1]
+        let next = points[index]
+        // next.x == previous.x only for a degenerate (near-)zero-length
+        // segment; clamp the same way `slope(between:_:)` already does
+        // rather than risking a NaN/Inf height feeding into physics.
+        let span = max(next.x - previous.x, 1)
+        let t = (x - previous.x) / span
+        return previous.y + (next.y - previous.y) * t
     }
 
     func terrainSlope(at x: CGFloat) -> CGFloat {
@@ -1078,13 +1146,12 @@ final class TerrainStreamController {
         if x <= terrainPoints[0].x {
             return slope(between: terrainPoints[0], terrainPoints[1])
         }
-
-        for index in 1..<terrainPoints.count {
-            if x <= terrainPoints[index].x {
-                return slope(between: terrainPoints[index - 1], terrainPoints[index])
-            }
+        if x >= terrainPoints[terrainPoints.count - 1].x {
+            return slope(between: terrainPoints[terrainPoints.count - 2], terrainPoints[terrainPoints.count - 1])
         }
-        return slope(between: terrainPoints[terrainPoints.count - 2], terrainPoints[terrainPoints.count - 1])
+
+        let index = firstPointIndex(in: terrainPoints, atOrAfter: x)
+        return slope(between: terrainPoints[index - 1], terrainPoints[index])
     }
 
     private func terrainTangent(at x: CGFloat) -> CGVector {
@@ -1097,33 +1164,40 @@ final class TerrainStreamController {
     /// reference-only air-gap line. Otherwise the controller reacts to ground
     /// the bike cannot actually touch as it leaves a lip.
     func surfaceTerrainHeight(at x: CGFloat) -> CGFloat? {
-        for chunk in terrainChunks {
-            for run in chunk.surfaceRuns {
-                guard let first = run.first, let last = run.last,
-                      x >= first.x, x <= last.x else {
-                    continue
-                }
-                return terrainHeight(in: run, at: x)
+        let index = firstChunkIndex(atOrAfter: x)
+        guard index < terrainChunks.count else { return nil }
+        let chunk = terrainChunks[index]
+        guard x >= chunk.startX else { return nil }
+
+        for run in chunk.surfaceRuns {
+            guard let first = run.first, let last = run.last,
+                  x >= first.x, x <= last.x else {
+                continue
             }
+            return terrainHeight(in: run, at: x)
         }
         return nil
     }
 
     func surfaceTerrainSlope(at x: CGFloat) -> CGFloat? {
-        for chunk in terrainChunks {
-            for run in chunk.surfaceRuns {
-                guard let first = run.first, let last = run.last,
-                      x >= first.x, x <= last.x, run.count > 1 else {
-                    continue
-                }
-                if x <= first.x {
-                    return slope(between: run[0], run[1])
-                }
-                for index in 1..<run.count where x <= run[index].x {
-                    return slope(between: run[index - 1], run[index])
-                }
+        let index = firstChunkIndex(atOrAfter: x)
+        guard index < terrainChunks.count else { return nil }
+        let chunk = terrainChunks[index]
+        guard x >= chunk.startX else { return nil }
+
+        for run in chunk.surfaceRuns {
+            guard let first = run.first, let last = run.last,
+                  x >= first.x, x <= last.x, run.count > 1 else {
+                continue
+            }
+            if x <= first.x {
+                return slope(between: run[0], run[1])
+            }
+            if x >= last.x {
                 return slope(between: run[run.count - 2], run[run.count - 1])
             }
+            let runIndex = firstPointIndex(in: run, atOrAfter: x)
+            return slope(between: run[runIndex - 1], run[runIndex])
         }
         return nil
     }
@@ -1200,4 +1274,3 @@ final class TerrainStreamController {
         (second.y - first.y) / max(second.x - first.x, 1)
     }
 }
-

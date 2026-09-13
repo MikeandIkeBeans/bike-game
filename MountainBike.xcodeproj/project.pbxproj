@@ -12,11 +12,9 @@
 		A10000000000000000000003 /* MountainBikeScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000013 /* MountainBikeScene.swift */; };
 		A10000000000000000000004 /* SpriteKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10000000000000000000014 /* SpriteKit.framework */; };
 		A10000000000000000000005 /* GameTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000016 /* GameTuning.swift */; };
-		A10000000000000000000017 /* mountain-background.jpg in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000018 /* mountain-background.jpg */; };
+		A10000000000000000000017 /* Resources/mountain-background.jpg in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000018 /* Resources/mountain-background.jpg */; };
 		A10000000000000000000019 /* BikeNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000001B /* BikeNode.swift */; };
 		A1000000000000000000001A /* TerrainStreamController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000001C /* TerrainStreamController.swift */; };
-		A1000000000000000000001D /* RearSuspensionRigScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000001E /* RearSuspensionRigScene.swift */; };
-		A1000000000000000000001F /* PlayableRearSuspensionScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000020 /* PlayableRearSuspensionScene.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,11 +24,9 @@
 		A10000000000000000000014 /* SpriteKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SpriteKit.framework; path = System/Library/Frameworks/SpriteKit.framework; sourceTree = SDKROOT; };
 		A10000000000000000000015 /* MountainBike.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MountainBike.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000016 /* GameTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameTuning.swift; sourceTree = "<group>"; };
-		A10000000000000000000018 /* mountain-background.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = Resources/mountain-background.jpg; sourceTree = "<group>"; };
+		A10000000000000000000018 /* Resources/mountain-background.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "Resources/mountain-background.jpg"; sourceTree = "<group>"; };
 		A1000000000000000000001B /* BikeNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BikeNode.swift; sourceTree = "<group>"; };
 		A1000000000000000000001C /* TerrainStreamController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerrainStreamController.swift; sourceTree = "<group>"; };
-		A1000000000000000000001E /* RearSuspensionRigScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RearSuspensionRigScene.swift; sourceTree = "<group>"; };
-		A10000000000000000000020 /* PlayableRearSuspensionScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayableRearSuspensionScene.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -59,7 +55,7 @@
 			children = (
 				A10000000000000000000011 /* MountainBikeApp.swift */,
 				A10000000000000000000012 /* ContentView.swift */,
-				A10000000000000000000018 /* mountain-background.jpg */,
+				A10000000000000000000018 /* Resources/mountain-background.jpg */,
 				A10000000000000000000035 /* Game */,
 			);
 			path = MountainBike;
@@ -88,8 +84,6 @@
 				A10000000000000000000016 /* GameTuning.swift */,
 				A1000000000000000000001B /* BikeNode.swift */,
 				A1000000000000000000001C /* TerrainStreamController.swift */,
-				A1000000000000000000001E /* RearSuspensionRigScene.swift */,
-				A10000000000000000000020 /* PlayableRearSuspensionScene.swift */,
 			);
 			path = Game;
 			sourceTree = "<group>";
@@ -123,10 +117,10 @@
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1600;
 				LastUpgradeCheck = 1600;
-			TargetAttributes = {
-				A10000000000000000000041 = {
-					CreatedOnToolsVersion = 16.0;
-				};
+				TargetAttributes = {
+					A10000000000000000000041 = {
+						CreatedOnToolsVersion = 16.0;
+					};
 				};
 			};
 			buildConfigurationList = A10000000000000000000052 /* Build configuration list for PBXProject "MountainBike" */;
@@ -152,7 +146,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A10000000000000000000017 /* mountain-background.jpg in Resources */,
+				A10000000000000000000017 /* Resources/mountain-background.jpg in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -169,8 +163,6 @@
 				A10000000000000000000005 /* GameTuning.swift in Sources */,
 				A10000000000000000000019 /* BikeNode.swift in Sources */,
 				A1000000000000000000001A /* TerrainStreamController.swift in Sources */,
-				A1000000000000000000001D /* RearSuspensionRigScene.swift in Sources */,
-				A1000000000000000000001F /* PlayableRearSuspensionScene.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -290,7 +282,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = UY3BZLDU42;
+				DEVELOPMENT_TEAM = S4MJ3R599A;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Bike Game";
@@ -320,7 +312,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = UY3BZLDU42;
+				DEVELOPMENT_TEAM = S4MJ3R599A;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Bike Game";
