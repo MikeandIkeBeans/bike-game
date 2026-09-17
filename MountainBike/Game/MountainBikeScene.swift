@@ -72,6 +72,18 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     )
     private let treeLayer = SKNode()
     private let terrainLayer = SKNode()
+    private let effectsLayer = SKNode()
+    private var roostTimer: TimeInterval = 0
+    private lazy var dustTexture: SKTexture = {
+        let diameter: CGFloat = 16
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: diameter, height: diameter))
+        let image = renderer.image { ctx in
+            let rect = CGRect(x: 1, y: 1, width: diameter - 2, height: diameter - 2)
+            ctx.cgContext.setFillColor(UIColor.white.cgColor)
+            ctx.cgContext.fillEllipse(in: rect)
+        }
+        return SKTexture(image: image)
+    }()
     private let bike = BikeNode()
     private lazy var terrainStream = TerrainStreamController(
         terrainLayer: terrainLayer,
@@ -211,6 +223,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         updateSpawnPitchLock()
         terrainStream.ensureTerrainAhead(of: bike.chassisPosition.x)
         applyPedalDrive()
+        updatePedalRoost()
         applyRiderLean()
         capVehicleMotion()
     }
@@ -267,6 +280,22 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             dx: tangent.dx * riderForce * 0.4,
             dy: tangent.dy * riderForce * 0.4
         ))
+    }
+
+    private func updatePedalRoost() {
+        guard pedalHeld, isGrounded else {
+            roostTimer = 0
+            return
+        }
+        roostTimer += frameDelta
+        if roostTimer >= 0.08 {
+            roostTimer = 0
+            let contactPoint = CGPoint(
+                x: bike.rearAxlePosition.x,
+                y: bike.rearAxlePosition.y - GameTuning.Bike.collisionWheelRadius
+            )
+            emitPedalRoost(at: contactPoint)
+        }
     }
 
     /// A terrain contact can occur beneath either tire while the chassis
@@ -341,6 +370,10 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             if airborneTime >= 0.25 {
                 lightHaptic.impactOccurred()
                 lightHaptic.prepare()
+                let rearContact = CGPoint(x: bike.rearAxlePosition.x, y: bike.rearAxlePosition.y - GameTuning.Bike.collisionWheelRadius)
+                let frontContact = CGPoint(x: bike.frontAxlePosition.x, y: bike.frontAxlePosition.y - GameTuning.Bike.collisionWheelRadius)
+                emitLandingDust(at: rearContact)
+                emitLandingDust(at: frontContact)
                 let airDistance = max(0, Int((bike.chassisPosition.x - airborneStartX) / GameTuning.Display.worldUnitsPerMeter))
                 if airborneTime >= 0.75 || airDistance >= 20 {
                     toast(airDistance >= 30 ? "HUGE AIR \(airDistance)m" : "BIG AIR \(airDistance)m")
@@ -420,6 +453,8 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         wasGrounded = true
         airborneTime = 0
         airborneStartX = 0
+        roostTimer = 0
+        effectsLayer.removeAllChildren()
         spawnPitchLockRemaining = 0
         pendingCrash = nil
         runState = .intro
@@ -487,6 +522,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         airborneStartX = 0
         bike.freezePhysics()
         bike.crash()
+        emitCrashDust(at: bike.chassisPosition)
         bestDistance = max(bestDistance, currentDistance)
         UserDefaults.standard.set(bestDistance, forKey: "TrailRush.physicsBestDistance")
         heavyHaptic.impactOccurred()
@@ -629,15 +665,93 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         forwardControl.setScale(forwardHeld ? 1.08 : 1)
     }
 
+    // MARK: - Particle effects
+
+    private func emitPedalRoost(at point: CGPoint) {
+        let roost = SKEmitterNode()
+        roost.particleTexture = dustTexture
+        roost.particleBirthRate = 50
+        roost.numParticlesToEmit = 3
+        roost.particleLifetime = 0.35
+        roost.particleLifetimeRange = 0.1
+        roost.particlePosition = point
+        roost.particleSpeed = 38
+        roost.particleSpeedRange = 15
+        roost.emissionAngle = .pi * 0.85
+        roost.emissionAngleRange = .pi * 0.35
+        roost.particleAlpha = 0.45
+        roost.particleAlphaSpeed = -1.2
+        roost.particleScale = 0.35
+        roost.particleScaleSpeed = 0.25
+        roost.particleColor = SKColor(red: 0.58, green: 0.46, blue: 0.34, alpha: 1.0)
+        roost.particleColorBlendFactor = 1.0
+        effectsLayer.addChild(roost)
+        roost.run(.sequence([
+            .wait(forDuration: 0.5),
+            .removeFromParent()
+        ]))
+    }
+
+    private func emitLandingDust(at point: CGPoint) {
+        let burst = SKEmitterNode()
+        burst.particleTexture = dustTexture
+        burst.particleBirthRate = 70
+        burst.numParticlesToEmit = 10
+        burst.particleLifetime = 0.42
+        burst.particleLifetimeRange = 0.12
+        burst.particlePosition = point
+        burst.particleSpeed = 45
+        burst.particleSpeedRange = 20
+        burst.emissionAngle = .pi * 0.5
+        burst.emissionAngleRange = .pi * 0.75
+        burst.particleAlpha = 0.55
+        burst.particleAlphaSpeed = -1.2
+        burst.particleScale = 0.45
+        burst.particleScaleSpeed = 0.3
+        burst.particleColor = SKColor(red: 0.62, green: 0.50, blue: 0.38, alpha: 1.0)
+        burst.particleColorBlendFactor = 1.0
+        effectsLayer.addChild(burst)
+        burst.run(.sequence([
+            .wait(forDuration: 0.6),
+            .removeFromParent()
+        ]))
+    }
+
+    private func emitCrashDust(at point: CGPoint) {
+        let blast = SKEmitterNode()
+        blast.particleTexture = dustTexture
+        blast.particleBirthRate = 120
+        blast.numParticlesToEmit = 24
+        blast.particleLifetime = 0.65
+        blast.particleLifetimeRange = 0.2
+        blast.particlePosition = point
+        blast.particleSpeed = 75
+        blast.particleSpeedRange = 40
+        blast.emissionAngle = .pi * 0.5
+        blast.emissionAngleRange = .pi * 2.0
+        blast.particleAlpha = 0.7
+        blast.particleAlphaSpeed = -1.0
+        blast.particleScale = 0.6
+        blast.particleScaleSpeed = 0.4
+        blast.particleColor = SKColor(red: 0.55, green: 0.44, blue: 0.35, alpha: 1.0)
+        blast.particleColorBlendFactor = 1.0
+        effectsLayer.addChild(blast)
+        blast.run(.sequence([
+            .wait(forDuration: 0.9),
+            .removeFromParent()
+        ]))
+    }
+
     // MARK: - Scene construction
 
     private func configureScene() {
         skyLayer.zPosition = -100
         treeLayer.zPosition = -5
         terrainLayer.zPosition = 0
+        effectsLayer.zPosition = 4
         bike.zPosition = 6
         cameraNode.zPosition = 50
-        [treeLayer, terrainLayer, bike, cameraNode].forEach(addChild)
+        [treeLayer, terrainLayer, effectsLayer, bike, cameraNode].forEach(addChild)
         camera = cameraNode
         cameraNode.addChild(skyLayer)
         cameraNode.addChild(hudLayer)

@@ -453,5 +453,57 @@ ld.update(isGrounded: true, posX: 480, delta: 0.016) // (480-300)/5 = 36m
 suite.assert(ld.hapticTriggered, "Huge jump triggers landing haptic")
 suite.assertEqual(ld.lastToast, "HUGE AIR 36m", "Huge jump triggers HUGE AIR 36m toast")
 
+// Test 11: Particle System & Roost Cadence Invariants
+print("\n• Test Group 11: Particle System & Roost Cadence Invariants")
+struct MockRoostController {
+    var roostTimer: TimeInterval = 0
+    var roostEmissionCount = 0
+    let roostInterval: TimeInterval = 0.08
+    let collisionWheelRadius: CGFloat = 16
+
+    mutating func update(pedalHeld: Bool, isGrounded: Bool, delta: TimeInterval) {
+        guard pedalHeld, isGrounded else {
+            roostTimer = 0
+            return
+        }
+        roostTimer += delta
+        if roostTimer >= roostInterval {
+            roostTimer = 0
+            roostEmissionCount += 1
+        }
+    }
+
+    func tireGroundContact(axle: CGPoint) -> CGPoint {
+        CGPoint(x: axle.x, y: axle.y - collisionWheelRadius)
+    }
+}
+
+var rc = MockRoostController()
+
+// 1. Not pedalling while grounded: no roost
+rc.update(pedalHeld: false, isGrounded: true, delta: 0.05)
+rc.update(pedalHeld: false, isGrounded: true, delta: 0.05)
+suite.assertEqual(rc.roostEmissionCount, 0, "No roost emitted when not pedalling")
+
+// 2. Pedalling while airborne: no roost
+rc.update(pedalHeld: true, isGrounded: false, delta: 0.05)
+rc.update(pedalHeld: true, isGrounded: false, delta: 0.05)
+suite.assertEqual(rc.roostEmissionCount, 0, "No roost emitted when airborne")
+suite.assertEqual(rc.roostTimer, 0, "Roost timer reset while airborne")
+
+// 3. Pedalling while grounded emits at 0.08s cadence
+rc.update(pedalHeld: true, isGrounded: true, delta: 0.04)
+suite.assertEqual(rc.roostEmissionCount, 0, "No roost at 0.04s (< 0.08s)")
+rc.update(pedalHeld: true, isGrounded: true, delta: 0.04)
+suite.assertEqual(rc.roostEmissionCount, 1, "First roost emitted at 0.08s threshold")
+rc.update(pedalHeld: true, isGrounded: true, delta: 0.08)
+suite.assertEqual(rc.roostEmissionCount, 2, "Second roost emitted at 0.16s")
+
+// 4. Tire contact point calculation
+let rearAxle = CGPoint(x: 100, y: 50)
+let contact = rc.tireGroundContact(axle: rearAxle)
+suite.assertEqual(contact.x, 100, "Tire contact X matches axle X")
+suite.assertEqual(contact.y, 34, "Tire contact Y is exactly axleY - collisionWheelRadius (50 - 16 = 34)")
+
 let allPassed = suite.summary()
 exit(allPassed ? 0 : 1)
