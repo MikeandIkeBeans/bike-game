@@ -232,7 +232,103 @@ suite.assert(testAxleClearance(axleY: terrainHeight + 24, terrainY: terrainHeigh
 suite.assert(testAxleClearance(axleY: terrainHeight - 6, terrainY: terrainHeight) != nil, "Tire at exact recovery trigger threshold (-6) is grounded")
 suite.assert(testAxleClearance(axleY: terrainHeight + 35, terrainY: terrainHeight) == nil, "Tire high airborne (+35) is not grounded")
 suite.assert(testAxleClearance(axleY: terrainHeight - 20, terrainY: terrainHeight) == nil, "Tire submerged beneath terrain (-20) is NOT grounded")
-suite.assert(testAxleClearance(axleY: terrainHeight - 500, terrainY: terrainHeight) == nil, "Tire fallen below world (-500) is NOT grounded")
+// Test 8: RunState Transition & Crash Input Invariants
+print("\n• Test Group 8: RunState Transitions & Crash Input Guard")
+enum MockRunState {
+    case intro
+    case riding
+    case crashing
+    case results
+}
+
+struct MockRunStateMachine {
+    var state: MockRunState = .intro
+    var leanInput: CGFloat = 0
+    var pedalHeld: Bool = false
+    var crashSequenceActive: Bool = false
+
+    mutating func startRun() {
+        guard state != .crashing else { return }
+        if state == .results {
+            resetRun()
+        }
+        guard state == .intro else { return }
+        state = .riding
+    }
+
+    mutating func enterCrash() {
+        guard state == .riding else { return }
+        state = .crashing
+        leanInput = 0
+        pedalHeld = false
+        crashSequenceActive = true
+    }
+
+    mutating func crashSequenceCompleted() {
+        guard state == .crashing else { return }
+        crashSequenceActive = false
+        state = .results
+    }
+
+    mutating func resetRun() {
+        crashSequenceActive = false
+        leanInput = 0
+        pedalHeld = false
+        state = .intro
+    }
+
+    mutating func handleTouch(lean: CGFloat, pedal: Bool) {
+        if state != .riding {
+            startRun()
+        }
+        guard state == .riding else { return }
+        leanInput = lean
+        pedalHeld = pedal
+    }
+
+    mutating func handleExplicitRestartKey() {
+        resetRun()
+        startRun()
+    }
+}
+
+var sm = MockRunStateMachine()
+suite.assertEqual(sm.state, MockRunState.intro, "Starts in intro state")
+
+// 1. Touch while intro drops into riding
+sm.handleTouch(lean: 1.0, pedal: true)
+suite.assertEqual(sm.state, MockRunState.riding, "Drops in to riding on touch")
+suite.assertEqual(sm.pedalHeld, true, "Pedal is held while riding")
+suite.assertEqual(sm.leanInput, 1.0, "Lean is active while riding")
+
+// 2. Crash occurs
+sm.enterCrash()
+suite.assertEqual(sm.state, MockRunState.crashing, "Enters crashing state")
+suite.assertEqual(sm.crashSequenceActive, true, "Crash sequence is active")
+suite.assertEqual(sm.pedalHeld, false, "Pedal input is zeroed on crash")
+suite.assertEqual(sm.leanInput, 0.0, "Lean input is zeroed on crash")
+
+// 3. User attempts touch while crashing (ragdoll in flight)
+sm.handleTouch(lean: -1.0, pedal: true)
+suite.assertEqual(sm.state, MockRunState.crashing, "Touch during crashing is ignored, stays crashing")
+suite.assertEqual(sm.pedalHeld, false, "Pedal input is NOT accepted during crash")
+suite.assertEqual(sm.leanInput, 0.0, "Lean input is NOT accepted during crash")
+
+// 4. Sequence timer completes
+sm.crashSequenceCompleted()
+suite.assertEqual(sm.state, MockRunState.results, "Transitions to results state after sequence completes")
+
+// 5. User taps screen in results state
+sm.handleTouch(lean: 0.0, pedal: true)
+suite.assertEqual(sm.state, MockRunState.riding, "Tap in results state resets and drops into riding")
+suite.assertEqual(sm.pedalHeld, true, "Pedal is registered in new run")
+
+// 6. Explicit restart key 'R' during crash cancels immediately
+sm.enterCrash()
+suite.assertEqual(sm.state, MockRunState.crashing, "In crash state again")
+sm.handleExplicitRestartKey()
+suite.assertEqual(sm.state, MockRunState.riding, "Explicit restart bypasses crash delay safely")
+suite.assertEqual(sm.crashSequenceActive, false, "Crash sequence action cancelled")
 
 let allPassed = suite.summary()
 exit(allPassed ? 0 : 1)

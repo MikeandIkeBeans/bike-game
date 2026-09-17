@@ -378,6 +378,8 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func resetRun(showIntro: Bool) {
+        removeAction(forKey: "crashSequence")
+        cameraNode.removeAction(forKey: "crashCameraShake")
         contacts.removeAll()
         activeTouches.removeAll()
         leanInput = 0
@@ -416,7 +418,8 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func startRun() {
-        if runState == .crashing || runState == .results {
+        guard runState != .crashing else { return }
+        if runState == .results {
             resetRun(showIntro: false)
         }
         guard runState == .intro else { return }
@@ -447,14 +450,31 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         activeTouches.removeAll()
         leanInput = 0
         pedalHeld = false
+        keyboardBackHeld = false
+        keyboardForwardHeld = false
+        keyboardPedalHeld = false
         bike.freezePhysics()
         bike.crash()
         bestDistance = max(bestDistance, currentDistance)
         UserDefaults.standard.set(bestDistance, forKey: "TrailRush.physicsBestDistance")
         heavyHaptic.impactOccurred()
         heavyHaptic.prepare()
-        showCrashOverlay(reason: reason)
-        runState = .results
+
+        cameraNode.run(.sequence([
+            .moveBy(x: -8, y: 6, duration: 0.04),
+            .moveBy(x: 14, y: -10, duration: 0.04),
+            .moveBy(x: -10, y: 7, duration: 0.04),
+            .moveBy(x: 4, y: -3, duration: 0.04)
+        ]), withKey: "crashCameraShake")
+
+        run(.sequence([
+            .wait(forDuration: 0.8),
+            .run { [weak self] in
+                guard let self = self, self.runState == .crashing else { return }
+                self.showCrashOverlay(reason: reason)
+                self.runState = .results
+            }
+        ]), withKey: "crashSequence")
     }
 
     private func retireTerrainBehindBike() {
