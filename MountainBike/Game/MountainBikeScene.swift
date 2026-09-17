@@ -103,6 +103,9 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     private var elapsedRunTime: TimeInterval = 0
     private var leanInput: CGFloat = 0
     private var pedalHeld = false
+    private var keyboardBackHeld = false
+    private var keyboardForwardHeld = false
+    private var keyboardPedalHeld = false
     private var previousAirborneAngle: CGFloat?
     private var airborneRotation: CGFloat = 0
     private var spawnPitchLockRemaining: TimeInterval = 0
@@ -378,6 +381,9 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         activeTouches.removeAll()
         leanInput = 0
         pedalHeld = false
+        keyboardBackHeld = false
+        keyboardForwardHeld = false
+        keyboardPedalHeld = false
         elapsedRunTime = 0
         previousAirborneAngle = nil
         airborneRotation = 0
@@ -460,7 +466,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         )
     }
 
-    // MARK: - Touch input
+    // MARK: - Touch and Keyboard input
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         if runState != .riding {
@@ -492,11 +498,74 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         touchesEnded(touches, with: event)
     }
 
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        var handled = false
+        for press in presses {
+            guard let key = press.key else { continue }
+            let chars = key.charactersIgnoringModifiers.lowercased()
+            switch chars {
+            case "a", UIKeyCommand.inputLeftArrow.lowercased():
+                keyboardBackHeld = true
+                handled = true
+            case "d", UIKeyCommand.inputRightArrow.lowercased():
+                keyboardForwardHeld = true
+                handled = true
+            case "w", " ", UIKeyCommand.inputUpArrow.lowercased():
+                keyboardPedalHeld = true
+                handled = true
+            case "r":
+                resetRun(showIntro: false)
+                startRun()
+                handled = true
+            default:
+                break
+            }
+        }
+        if handled {
+            if runState != .riding {
+                startRun()
+            }
+            updateControls()
+        } else {
+            super.pressesBegan(presses, with: event)
+        }
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        var handled = false
+        for press in presses {
+            guard let key = press.key else { continue }
+            let chars = key.charactersIgnoringModifiers.lowercased()
+            switch chars {
+            case "a", UIKeyCommand.inputLeftArrow.lowercased():
+                keyboardBackHeld = false
+                handled = true
+            case "d", UIKeyCommand.inputRightArrow.lowercased():
+                keyboardForwardHeld = false
+                handled = true
+            case "w", " ", UIKeyCommand.inputUpArrow.lowercased():
+                keyboardPedalHeld = false
+                handled = true
+            default:
+                break
+            }
+        }
+        if handled {
+            updateControls()
+        } else {
+            super.pressesEnded(presses, with: event)
+        }
+    }
+
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        pressesEnded(presses, with: event)
+    }
+
     private func updateControls() {
         let laneWidth = size.width / 3
-        let backHeld = activeTouches.values.contains { $0.x < -laneWidth / 2 }
-        pedalHeld = activeTouches.values.contains { abs($0.x) <= laneWidth / 2 }
-        let forwardHeld = activeTouches.values.contains { $0.x > laneWidth / 2 }
+        let backHeld = keyboardBackHeld || activeTouches.values.contains { $0.x < -laneWidth / 2 }
+        pedalHeld = keyboardPedalHeld || activeTouches.values.contains { abs($0.x) <= laneWidth / 2 }
+        let forwardHeld = keyboardForwardHeld || activeTouches.values.contains { $0.x > laneWidth / 2 }
         switch (backHeld, forwardHeld) {
         case (true, false): leanInput = 1
         case (false, true): leanInput = -1

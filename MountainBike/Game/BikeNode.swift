@@ -10,6 +10,7 @@ final class BikeNode: SKNode {
     private let rearWheel = SKShapeNode(circleOfRadius: GameTuning.Bike.visualWheelRadius)
     private let frontWheel = SKShapeNode(circleOfRadius: GameTuning.Bike.visualWheelRadius)
     private let shock = SKShapeNode()
+    private let forkStanchion = SKShapeNode()
     private let bikeArtwork = SKNode()
     private let swingarmArtwork = SKNode()
     private let frontForkArtwork = SKNode()
@@ -122,6 +123,7 @@ final class BikeNode: SKNode {
         }
 
         updateShockVisual()
+        updateForkVisual()
     }
 
     /// Places both tire fixtures just above a straight supporting rail at the
@@ -252,8 +254,11 @@ final class BikeNode: SKNode {
 
         let recoveryPosition = chassisIsBroken ? .zero : chassisPosition
         let recoveryAttitude = chassis.zRotation.isFinite ? chassis.zRotation : 0
+        let wasDynamic = chassis.physicsBody?.isDynamic ?? false
         reset(at: recoveryPosition, attitude: recoveryAttitude)
-        activatePhysics()
+        if wasDynamic {
+            activatePhysics()
+        }
         return true
     }
 
@@ -263,6 +268,7 @@ final class BikeNode: SKNode {
     func updateVisuals(deltaTime: TimeInterval) {
         guard !repairIfBroken() else { return }
         updateShockVisual()
+        updateForkVisual()
         for body in allBodies {
             // A stiff joint solved across a large frame-hitch timestep, or a
             // hard multi-body impact, can occasionally push a body's velocity
@@ -389,10 +395,6 @@ final class BikeNode: SKNode {
         topOutJoint = nil
         frontForkSlidingJoint = nil
         frontForkSpringJoint = nil
-
-
-
-
     }
 
     private func updateShockVisual() {
@@ -428,6 +430,18 @@ final class BikeNode: SKNode {
         shock.strokeColor = SKColor(red: 0.85, green: 0.88, blue: 0.90, alpha: 1)
         shock.lineWidth = 2.5
         shock.lineCap = .round
+    }
+
+    private func updateForkVisual() {
+        let headTube = convert(BikeGeometry.headTubeBottom, from: chassis)
+        let forkDrop = convert(CGPoint(x: -18, y: 38), from: frontFork)
+        let path = CGMutablePath()
+        path.move(to: headTube)
+        path.addLine(to: forkDrop)
+        forkStanchion.path = path
+        forkStanchion.strokeColor = SKColor(red: 0.88, green: 0.74, blue: 0.44, alpha: 1)
+        forkStanchion.lineWidth = 3.5
+        forkStanchion.lineCap = .round
     }
 
     private func configurePhysics() {
@@ -571,12 +585,6 @@ final class BikeNode: SKNode {
             width: 7
         ))
         bikeArtwork.addChild(tube(
-            from: BikeGeometry.headTubeBottom,
-            to: CGPoint(x: 22.5, y: -10.5),
-            color: rimColor,
-            width: 3
-        ))
-        bikeArtwork.addChild(tube(
             from: BikeGeometry.seatCluster,
             to: BikeGeometry.seatPostTop,
             color: frameShade,
@@ -652,6 +660,7 @@ final class BikeNode: SKNode {
         addChild(rearWheel)
         addChild(frontWheel)
         addChild(shock)
+        addChild(forkStanchion)
     }
 
     private func buildRider() {
