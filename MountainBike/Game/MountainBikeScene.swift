@@ -48,9 +48,9 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         }
 
         mutating func forget(_ bodyID: ObjectIdentifier) {
-            contactsByBody.removeValue(forKey: bodyID)
-            for remainingID in Array(contactsByBody.keys) {
-                remove(remainingID, other: bodyID)
+            guard let otherIDs = contactsByBody.removeValue(forKey: bodyID) else { return }
+            for otherID in otherIDs {
+                remove(otherID, other: bodyID)
             }
         }
 

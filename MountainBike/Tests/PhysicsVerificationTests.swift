@@ -156,5 +156,65 @@ suite.assert((allBike & terrain) == 0, "All bike components are disjoint from te
 suite.assert((bikeChassis & bikeSwingarm) == 0, "Chassis and Swingarm masks are disjoint")
 suite.assert((bikeWheel & bikeFrontFork) == 0, "Wheel and Front Fork masks are disjoint")
 
+// Test 6: ContactBook Symmetric Tracking & Memory Isolation
+print("\n• Test Group 6: ContactBook Symmetric Tracking & Memory Isolation")
+struct TestContactBook {
+    var contactsByBody: [Int: Set<Int>] = [:]
+
+    mutating func began(_ first: Int, _ second: Int) {
+        contactsByBody[first, default: []].insert(second)
+        contactsByBody[second, default: []].insert(first)
+    }
+
+    mutating func ended(_ first: Int, _ second: Int) {
+        remove(first, other: second)
+        remove(second, other: first)
+    }
+
+    func touches(_ body: Int) -> Bool {
+        !(contactsByBody[body]?.isEmpty ?? true)
+    }
+
+    func touches(_ body: Int, anyOf ids: Set<Int>) -> Bool {
+        guard let contacts = contactsByBody[body] else { return false }
+        return !contacts.isDisjoint(with: ids)
+    }
+
+    mutating func forget(_ bodyID: Int) {
+        guard let otherIDs = contactsByBody.removeValue(forKey: bodyID) else { return }
+        for otherID in otherIDs {
+            remove(otherID, other: bodyID)
+        }
+    }
+
+    private mutating func remove(_ body: Int, other: Int) {
+        guard var contacts = contactsByBody[body] else { return }
+        contacts.remove(other)
+        if contacts.isEmpty {
+            contactsByBody.removeValue(forKey: body)
+        } else {
+            contactsByBody[body] = contacts
+        }
+    }
+}
+
+var cb = TestContactBook()
+cb.began(101, 201) // Chassis touches Terrain Chunk A
+cb.began(102, 201) // Rear Wheel touches Terrain Chunk A
+cb.began(103, 202) // Front Wheel touches Terrain Chunk B
+
+suite.assert(cb.touches(101), "Chassis is touching")
+suite.assert(cb.touches(102), "Rear wheel is touching")
+suite.assert(cb.touches(201, anyOf: [101, 102]), "Chunk A detects touches from bike parts")
+suite.assert(!cb.touches(101, anyOf: [202]), "Chassis is not touching Chunk B")
+
+// Retire Chunk A (forget 201)
+cb.forget(201)
+suite.assert(!cb.touches(201), "Retired Chunk A is completely purged")
+suite.assert(!cb.touches(101), "Chassis contact set is cleared")
+suite.assert(!cb.touches(102), "Rear wheel contact set is cleared")
+suite.assert(cb.touches(103), "Front wheel still retains valid contact with Chunk B")
+suite.assert(cb.contactsByBody[201] == nil, "Chunk A key was removed from dictionary")
+
 let allPassed = suite.summary()
 exit(allPassed ? 0 : 1)
