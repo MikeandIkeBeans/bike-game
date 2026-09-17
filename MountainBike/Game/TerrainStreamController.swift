@@ -337,7 +337,11 @@ final class TerrainStreamController {
         terrainBodyIDs.formUnion(generated.chunk.terrainBodyIDs)
         terrainCursor = generated.cursor
         nextTerrainChunkIndex += 1
-        rebuildTerrainPointIndex()
+        if terrainPoints.isEmpty {
+            terrainPoints.append(contentsOf: generated.chunk.points)
+        } else {
+            terrainPoints.append(contentsOf: generated.chunk.points.dropFirst())
+        }
     }
 
     func retireTerrain(
@@ -365,7 +369,9 @@ final class TerrainStreamController {
     }
 
     private func rebuildTerrainPointIndex() {
+        let estimatedCapacity = terrainChunks.reduce(0) { $0 + $1.points.count }
         var indexedPoints: [CGPoint] = []
+        indexedPoints.reserveCapacity(estimatedCapacity)
         for chunk in terrainChunks {
             if indexedPoints.isEmpty {
                 indexedPoints.append(contentsOf: chunk.points)
@@ -418,7 +424,8 @@ final class TerrainStreamController {
             terrainEdge.physicsBody = terrainBody
             bodyIDs.insert(ObjectIdentifier(terrainBody))
 
-            let fillBottom = (surfacePoints.map(\.y).min() ?? 0) - GameTuning.Terrain.terrainFillDepth
+            let minY = surfacePoints.min(by: { $0.y < $1.y })?.y ?? 0
+            let fillBottom = minY - GameTuning.Terrain.terrainFillDepth
             let fillPath = CGMutablePath()
             fillPath.move(to: surfacePoints[0])
             surfacePoints.dropFirst().forEach { fillPath.addLine(to: $0) }

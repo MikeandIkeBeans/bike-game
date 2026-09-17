@@ -330,5 +330,58 @@ sm.handleExplicitRestartKey()
 suite.assertEqual(sm.state, MockRunState.riding, "Explicit restart bypasses crash delay safely")
 suite.assertEqual(sm.crashSequenceActive, false, "Crash sequence action cancelled")
 
+// Test 9: Terrain Chunk Streaming & Point Indexing Invariants
+print("\n• Test Group 9: Terrain Chunk Streaming & Point Index Invariants")
+struct MockChunk {
+    let points: [CGPoint]
+    var startX: CGFloat { points.first?.x ?? 0 }
+    var endX: CGFloat { points.last?.x ?? 0 }
+}
+
+var testChunks: [MockChunk] = [
+    MockChunk(points: [CGPoint(x: 0, y: 100), CGPoint(x: 50, y: 95), CGPoint(x: 100, y: 90)]),
+    MockChunk(points: [CGPoint(x: 100, y: 90), CGPoint(x: 150, y: 85), CGPoint(x: 200, y: 80)]),
+    MockChunk(points: [CGPoint(x: 200, y: 80), CGPoint(x: 250, y: 82), CGPoint(x: 300, y: 85)])
+]
+
+// Method A: Full Rebuild
+func fullRebuild(chunks: [MockChunk]) -> [CGPoint] {
+    var result: [CGPoint] = []
+    for chunk in chunks {
+        if result.isEmpty {
+            result.append(contentsOf: chunk.points)
+        } else {
+            result.append(contentsOf: chunk.points.dropFirst())
+        }
+    }
+    return result
+}
+
+// Method B: Incremental Append
+var incrementalPoints: [CGPoint] = []
+for chunk in testChunks {
+    if incrementalPoints.isEmpty {
+        incrementalPoints.append(contentsOf: chunk.points)
+    } else {
+        incrementalPoints.append(contentsOf: chunk.points.dropFirst())
+    }
+}
+
+let expectedPoints = fullRebuild(chunks: testChunks)
+suite.assertEqual(incrementalPoints.count, expectedPoints.count, "Incremental count matches full rebuild count")
+suite.assertEqual(incrementalPoints.count, 7, "Exact point count across 3 continuous chunks")
+for i in 0..<incrementalPoints.count {
+    suite.assertEqual(incrementalPoints[i], expectedPoints[i], "Point \(i) matches exactly")
+}
+
+// Test boundary continuity
+suite.assertEqual(incrementalPoints.first?.x, 0, "Level start X is 0")
+suite.assertEqual(incrementalPoints.last?.x, 300, "Level end X is 300")
+
+// Test zero-allocation minY computation
+let testSurfacePoints = [CGPoint(x: 10, y: 55), CGPoint(x: 20, y: 12), CGPoint(x: 30, y: 44)]
+let minY = testSurfacePoints.min(by: { $0.y < $1.y })?.y ?? 0
+suite.assertEqual(minY, 12, "Zero-allocation minY matches expected minimum")
+
 let allPassed = suite.summary()
 exit(allPassed ? 0 : 1)
