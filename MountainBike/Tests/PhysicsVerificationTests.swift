@@ -383,5 +383,75 @@ let testSurfacePoints = [CGPoint(x: 10, y: 55), CGPoint(x: 20, y: 12), CGPoint(x
 let minY = testSurfacePoints.min(by: { $0.y < $1.y })?.y ?? 0
 suite.assertEqual(minY, 12, "Zero-allocation minY matches expected minimum")
 
+// Test 10: Airborne & Landing Detection Invariants
+print("\n• Test Group 10: Airborne & Landing Detection Invariants")
+struct MockLandingDetector {
+    var wasGrounded = true
+    var airborneTime: TimeInterval = 0
+    var airborneStartX: CGFloat = 0
+    var worldUnitsPerMeter: CGFloat = 5
+    var lastToast: String? = nil
+    var hapticTriggered = false
+
+    mutating func update(isGrounded: Bool, posX: CGFloat, delta: TimeInterval) {
+        if !isGrounded {
+            if wasGrounded {
+                airborneStartX = posX
+                airborneTime = 0
+            }
+            airborneTime += delta
+        } else if !wasGrounded {
+            if airborneTime >= 0.25 {
+                hapticTriggered = true
+                let airDistance = max(0, Int((posX - airborneStartX) / worldUnitsPerMeter))
+                if airborneTime >= 0.75 || airDistance >= 20 {
+                    lastToast = airDistance >= 30 ? "HUGE AIR \(airDistance)m" : "BIG AIR \(airDistance)m"
+                }
+            }
+            airborneTime = 0
+            airborneStartX = 0
+        }
+        wasGrounded = isGrounded
+    }
+}
+
+var ld = MockLandingDetector()
+
+// 1. Initial on ground: no haptics or toasts
+ld.update(isGrounded: true, posX: 0, delta: 0.016)
+suite.assert(!ld.hapticTriggered, "No haptic while grounded")
+suite.assert(ld.lastToast == nil, "No toast while grounded")
+
+// 2. Micro bump (< 0.25s)
+ld.update(isGrounded: false, posX: 10, delta: 0.10)
+ld.update(isGrounded: true, posX: 20, delta: 0.016)
+suite.assert(!ld.hapticTriggered, "Micro bump < 0.25s triggers no haptic")
+suite.assert(ld.lastToast == nil, "Micro bump triggers no toast")
+
+// 3. Medium jump: 0.4s flight, 8m distance
+ld.hapticTriggered = false
+ld.update(isGrounded: false, posX: 30, delta: 0.20)
+ld.update(isGrounded: false, posX: 50, delta: 0.20)
+ld.update(isGrounded: true, posX: 70, delta: 0.016)
+suite.assert(ld.hapticTriggered, "Medium jump >= 0.25s triggers landing haptic")
+suite.assert(ld.lastToast == nil, "Medium jump below 20m/0.75s does not trigger big air toast")
+
+// 4. Big air: 0.8s flight, 24m distance
+ld.hapticTriggered = false
+ld.update(isGrounded: false, posX: 100, delta: 0.40)
+ld.update(isGrounded: false, posX: 160, delta: 0.40)
+ld.update(isGrounded: true, posX: 220, delta: 0.016) // (220-100)/5 = 24m
+suite.assert(ld.hapticTriggered, "Big jump triggers landing haptic")
+suite.assertEqual(ld.lastToast, "BIG AIR 24m", "Big jump triggers BIG AIR 24m toast")
+
+// 5. Huge air: 1.2s flight, 36m distance
+ld.hapticTriggered = false
+ld.lastToast = nil
+ld.update(isGrounded: false, posX: 300, delta: 0.60)
+ld.update(isGrounded: false, posX: 400, delta: 0.60)
+ld.update(isGrounded: true, posX: 480, delta: 0.016) // (480-300)/5 = 36m
+suite.assert(ld.hapticTriggered, "Huge jump triggers landing haptic")
+suite.assertEqual(ld.lastToast, "HUGE AIR 36m", "Huge jump triggers HUGE AIR 36m toast")
+
 let allPassed = suite.summary()
 exit(allPassed ? 0 : 1)

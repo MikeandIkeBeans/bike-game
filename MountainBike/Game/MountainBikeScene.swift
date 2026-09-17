@@ -108,6 +108,9 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     private var keyboardPedalHeld = false
     private var previousAirborneAngle: CGFloat?
     private var airborneRotation: CGFloat = 0
+    private var wasGrounded = true
+    private var airborneTime: TimeInterval = 0
+    private var airborneStartX: CGFloat = 0
     private var spawnPitchLockRemaining: TimeInterval = 0
     private var bestDistance = UserDefaults.standard.integer(forKey: "TrailRush.physicsBestDistance")
 
@@ -220,6 +223,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             bike.updateVisuals(deltaTime: frameDelta)
             capVehicleMotion()
             updateAirborneRotation()
+            updateAirborneAndLandingState()
             evaluateRunState()
             commitPendingCrashIfNeeded()
             updateHUD()
@@ -325,6 +329,29 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         previousAirborneAngle = bike.chassisRotation
     }
 
+    private func updateAirborneAndLandingState() {
+        let currentlyGrounded = isGrounded
+        if !currentlyGrounded {
+            if wasGrounded {
+                airborneStartX = bike.chassisPosition.x
+                airborneTime = 0
+            }
+            airborneTime += frameDelta
+        } else if !wasGrounded {
+            if airborneTime >= 0.25 {
+                lightHaptic.impactOccurred()
+                lightHaptic.prepare()
+                let airDistance = max(0, Int((bike.chassisPosition.x - airborneStartX) / GameTuning.Display.worldUnitsPerMeter))
+                if airborneTime >= 0.75 || airDistance >= 20 {
+                    toast(airDistance >= 30 ? "HUGE AIR \(airDistance)m" : "BIG AIR \(airDistance)m")
+                }
+            }
+            airborneTime = 0
+            airborneStartX = 0
+        }
+        wasGrounded = currentlyGrounded
+    }
+
     private func evaluateRunState() {
         guard runState == .riding else { return }
         let hasLeftStart = bike.chassisPosition.x >= GameTuning.Bike.spawnX + GameTuning.Crash.minimumTravelBeforeCrashChecks
@@ -390,6 +417,9 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         elapsedRunTime = 0
         previousAirborneAngle = nil
         airborneRotation = 0
+        wasGrounded = true
+        airborneTime = 0
+        airborneStartX = 0
         spawnPitchLockRemaining = 0
         pendingCrash = nil
         runState = .intro
@@ -453,6 +483,8 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         keyboardBackHeld = false
         keyboardForwardHeld = false
         keyboardPedalHeld = false
+        airborneTime = 0
+        airborneStartX = 0
         bike.freezePhysics()
         bike.crash()
         bestDistance = max(bestDistance, currentDistance)
@@ -733,7 +765,11 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     private func updateHUD() {
         distanceLabel.text = "\(currentDistance)m"
         speedLabel.text = "\(currentSpeed) km/h"
-        surfaceLabel.text = isGrounded ? "GRIP" : "AIR"
+        if isGrounded {
+            surfaceLabel.text = "GRIP"
+        } else {
+            surfaceLabel.text = airborneTime >= 0.2 ? String(format: "AIR %.1fs", airborneTime) : "AIR"
+        }
     }
 
     private func updateCamera(immediately: Bool = false) {
