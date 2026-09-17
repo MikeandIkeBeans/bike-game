@@ -505,5 +505,55 @@ let contact = rc.tireGroundContact(axle: rearAxle)
 suite.assertEqual(contact.x, 100, "Tire contact X matches axle X")
 suite.assertEqual(contact.y, 34, "Tire contact Y is exactly axleY - collisionWheelRadius (50 - 16 = 34)")
 
+// Test 12: Dynamic Rider Pose & Weight-Shift Invariants
+print("\n• Test Group 12: Dynamic Rider Pose & Weight-Shift Invariants")
+struct MockRiderPose {
+    var posX: CGFloat = 0
+    var posY: CGFloat = 0
+    var rot: CGFloat = 0
+
+    mutating func update(deltaTime: TimeInterval, leanInput: CGFloat, pedalHeld: Bool) {
+        let targetX: CGFloat = leanInput * -8.0
+        let targetY: CGFloat = (abs(leanInput) > 0 || pedalHeld) ? -3.0 : 0.0
+        let targetRot: CGFloat = leanInput * 0.12
+        let lerpRate = min(CGFloat(deltaTime) * 12.0, 1.0)
+        posX += (targetX - posX) * lerpRate
+        posY += (targetY - posY) * lerpRate
+        rot += (targetRot - rot) * lerpRate
+    }
+}
+
+var rp = MockRiderPose()
+
+// 1. Neutral stance at rest
+rp.update(deltaTime: 0.1, leanInput: 0, pedalHeld: false)
+suite.assertEqual(rp.posX, 0.0, "Neutral X is 0.0")
+suite.assertEqual(rp.posY, 0.0, "Neutral Y is 0.0")
+suite.assertEqual(rp.rot, 0.0, "Neutral rotation is 0.0")
+
+// 2. Lean back (leanInput = 1.0): shifts weight rearward and crouches slightly
+for _ in 0..<30 {
+    rp.update(deltaTime: 0.016, leanInput: 1.0, pedalHeld: false)
+}
+suite.assertNear(rp.posX, -8.0, accuracy: 0.1, "Lean back target X converges to -8.0")
+suite.assertNear(rp.posY, -3.0, accuracy: 0.1, "Lean back crouch Y converges to -3.0")
+suite.assertNear(rp.rot, 0.12, accuracy: 0.01, "Lean back rotation converges to +0.12 rad")
+
+// 3. Lean forward (leanInput = -1.0): shifts weight forward and tucks
+for _ in 0..<40 {
+    rp.update(deltaTime: 0.016, leanInput: -1.0, pedalHeld: false)
+}
+suite.assertNear(rp.posX, 8.0, accuracy: 0.1, "Lean forward target X converges to +8.0")
+suite.assertNear(rp.posY, -3.0, accuracy: 0.1, "Lean forward tuck Y converges to -3.0")
+suite.assertNear(rp.rot, -0.12, accuracy: 0.01, "Lean forward rotation converges to -0.12 rad")
+
+// 4. Pedal only (leanInput = 0, pedalHeld = true): centered crouch
+for _ in 0..<40 {
+    rp.update(deltaTime: 0.016, leanInput: 0, pedalHeld: true)
+}
+suite.assertNear(rp.posX, 0.0, accuracy: 0.1, "Pedal-only target X returns to center")
+suite.assertNear(rp.posY, -3.0, accuracy: 0.1, "Pedal crouch remains at -3.0")
+suite.assertNear(rp.rot, 0.0, accuracy: 0.01, "Pedal rotation returns to 0.0")
+
 let allPassed = suite.summary()
 exit(allPassed ? 0 : 1)

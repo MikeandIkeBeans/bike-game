@@ -233,7 +233,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
 
         if runState == .riding {
             elapsedRunTime += frameDelta
-            bike.updateVisuals(deltaTime: frameDelta)
+            bike.updateVisuals(deltaTime: frameDelta, leanInput: leanInput, pedalHeld: pedalHeld)
             capVehicleMotion()
             updateAirborneRotation()
             updateAirborneAndLandingState()

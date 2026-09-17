@@ -263,12 +263,13 @@ final class BikeNode: SKNode {
     }
 
     /// The visual wheels rotate naturally from friction with the ground in the
-    /// physics engine. Here we update the live shock visual and cap excessive
-    /// spin, speed, and non-finite values a hard multi-body impact can produce.
-    func updateVisuals(deltaTime: TimeInterval) {
+    /// physics engine. Here we update the live shock visual, rider posture,
+    /// and cap excessive spin, speed, and non-finite values a hard impact can produce.
+    func updateVisuals(deltaTime: TimeInterval, leanInput: CGFloat = 0, pedalHeld: Bool = false) {
         guard !repairIfBroken() else { return }
         updateShockVisual()
         updateForkVisual()
+        updateRiderPose(deltaTime: deltaTime, leanInput: leanInput, pedalHeld: pedalHeld)
         for body in allBodies {
             // A stiff joint solved across a large frame-hitch timestep, or a
             // hard multi-body impact, can occasionally push a body's velocity
@@ -442,6 +443,17 @@ final class BikeNode: SKNode {
         forkStanchion.strokeColor = SKColor(red: 0.88, green: 0.74, blue: 0.44, alpha: 1)
         forkStanchion.lineWidth = 3.5
         forkStanchion.lineCap = .round
+    }
+
+    private func updateRiderPose(deltaTime: TimeInterval, leanInput: CGFloat, pedalHeld: Bool) {
+        guard rider.parent == bikeArtwork else { return }
+        let targetX: CGFloat = leanInput * -8.0
+        let targetY: CGFloat = (abs(leanInput) > 0 || pedalHeld) ? -3.0 : 0.0
+        let targetRot: CGFloat = leanInput * 0.12
+        let lerpRate = min(CGFloat(deltaTime) * 12.0, 1.0)
+        rider.position.x += (targetX - rider.position.x) * lerpRate
+        rider.position.y += (targetY - rider.position.y) * lerpRate
+        rider.zRotation += (targetRot - rider.zRotation) * lerpRate
     }
 
     private func configurePhysics() {
