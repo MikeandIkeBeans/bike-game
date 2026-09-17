@@ -216,5 +216,23 @@ suite.assert(!cb.touches(102), "Rear wheel contact set is cleared")
 suite.assert(cb.touches(103), "Front wheel still retains valid contact with Chunk B")
 suite.assert(cb.contactsByBody[201] == nil, "Chunk A key was removed from dictionary")
 
+// Test 7: Axle Clearance & Grounded Invariant Bounds
+print("\n• Test Group 7: Axle Clearance & Grounded Invariant Bounds")
+func testAxleClearance(axleY: CGFloat, terrainY: CGFloat, collisionRadius: CGFloat = 16, tolerance: CGFloat = 8, recoveryTrigger: CGFloat = 6) -> CGFloat? {
+    let clearance = axleY - terrainY
+    let minClearance = -recoveryTrigger
+    let maxClearance = collisionRadius + tolerance
+    return (clearance >= minClearance && clearance <= maxClearance) ? clearance : nil
+}
+
+let terrainHeight: CGFloat = 100.0
+suite.assert(testAxleClearance(axleY: terrainHeight + 16, terrainY: terrainHeight) != nil, "Tire resting on surface (+16) is grounded")
+suite.assert(testAxleClearance(axleY: terrainHeight + 10, terrainY: terrainHeight) != nil, "Tire compressed by 6 units (+10) is grounded")
+suite.assert(testAxleClearance(axleY: terrainHeight + 24, terrainY: terrainHeight) != nil, "Tire at max grounded tolerance (+24) is grounded")
+suite.assert(testAxleClearance(axleY: terrainHeight - 6, terrainY: terrainHeight) != nil, "Tire at exact recovery trigger threshold (-6) is grounded")
+suite.assert(testAxleClearance(axleY: terrainHeight + 35, terrainY: terrainHeight) == nil, "Tire high airborne (+35) is not grounded")
+suite.assert(testAxleClearance(axleY: terrainHeight - 20, terrainY: terrainHeight) == nil, "Tire submerged beneath terrain (-20) is NOT grounded")
+suite.assert(testAxleClearance(axleY: terrainHeight - 500, terrainY: terrainHeight) == nil, "Tire fallen below world (-500) is NOT grounded")
+
 let allPassed = suite.summary()
 exit(allPassed ? 0 : 1)

@@ -152,8 +152,9 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             return nil
         }
         let clearance = axlePosition.y - terrainY
-        let limit = GameTuning.Bike.collisionWheelRadius + GameTuning.Bike.groundedTolerance
-        return clearance <= limit ? clearance : nil
+        let minClearance = -GameTuning.Terrain.wheelPenetrationRecoveryTrigger
+        let maxClearance = GameTuning.Bike.collisionWheelRadius + GameTuning.Bike.groundedTolerance
+        return (clearance >= minClearance && clearance <= maxClearance) ? clearance : nil
     }
 
     override init(size: CGSize) {
