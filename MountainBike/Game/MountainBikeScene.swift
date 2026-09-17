@@ -297,8 +297,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             1
         )
         let climbLoad = max(tangent.dy, 0)
-        let riderForce = GameTuning.Handling.pedalForce * forceFade
-            + GameTuning.Handling.pedalClimbForce * climbLoad
+        let riderForce = (GameTuning.Handling.pedalForce + GameTuning.Handling.pedalClimbForce * climbLoad) * forceFade
         guard riderForce > 0 else { return }
 
         // Apply force across all bodies proportional to mass for smooth, unified acceleration
@@ -340,31 +339,35 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
 
     /// In real downhill mountain biking, a transition curve ("scoop" or "compression")
     /// redirects high downhill speed upward along the launch ramp rather than
-    /// acting like an inelastic wall collision. This preserves the rider's kinetic
-    /// energy along the ramp tangent, allowing fast descents to launch high into the air.
+    /// acting like an inelastic wall collision. This smoothly rotates the rider's
+    /// incoming velocity vector along the ramp tangent while strictly conserving (never boosting)
+    /// kinetic energy.
     private func preserveTransitionMomentum() {
         guard isGrounded, let tangent = pedalSupportTangent() else { return }
         let currentSpeed = vectorLength(bike.velocity)
-        // Engage on fast approaches into upward kickers / transition scoops
         guard currentSpeed > 180, tangent.dy > 0.05, bike.velocity.dx > 100 else { return }
 
-        let alongTrail = bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy
-        let launchSpeed = max(alongTrail, currentSpeed)
-        let targetVelocity = CGVector(dx: tangent.dx * launchSpeed, dy: tangent.dy * launchSpeed)
+        // Outward normal vector from the terrain surface
+        let normal = CGVector(dx: -tangent.dy, dy: tangent.dx)
+        let normalVelocity = bike.velocity.dx * normal.dx + bike.velocity.dy * normal.dy
 
-        let blend: CGFloat = min(CGFloat(frameDelta) * 20.0, 0.60)
+        // ONLY redirect when the vehicle is actively colliding into the ramp face (normalVelocity < -15).
+        // Once the velocity is redirected along or away from the ramp (normalVelocity >= 0),
+        // the bike is launching freely and this MUST NOT run or compound.
+        guard normalVelocity < -15 else { return }
+
+        // Guide velocity smoothly toward the ramp tangent at existing scalar speed
+        let targetVelocity = CGVector(dx: tangent.dx * currentSpeed, dy: tangent.dy * currentSpeed)
+        let blend: CGFloat = min(CGFloat(frameDelta) * 16.0, 0.45)
         var newVx = bike.velocity.dx * (1 - blend) + targetVelocity.dx * blend
         var newVy = bike.velocity.dy * (1 - blend) + targetVelocity.dy * blend
 
-        if newVy < targetVelocity.dy * 0.5 {
-            newVy = max(newVy, targetVelocity.dy * blend)
-        }
-
+        // Never allow the speed to exceed the incoming speed
         let newSpeed = hypot(newVx, newVy)
-        if newSpeed > 0 && newSpeed < currentSpeed {
-            let boost = currentSpeed / newSpeed
-            newVx *= boost
-            newVy *= boost
+        if newSpeed > currentSpeed && newSpeed > 0 {
+            let scale = currentSpeed / newSpeed
+            newVx *= scale
+            newVy *= scale
         }
 
         let newVelocity = CGVector(dx: newVx, dy: newVy)

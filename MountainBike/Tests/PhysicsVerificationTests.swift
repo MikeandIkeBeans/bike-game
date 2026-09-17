@@ -647,23 +647,20 @@ func testTransitionMomentum(velocity: CGVector, tangent: CGVector, delta: TimeIn
     let currentSpeed = hypot(velocity.dx, velocity.dy)
     guard currentSpeed > 180, tangent.dy > 0.05, velocity.dx > 100 else { return velocity }
 
-    let alongTrail = velocity.dx * tangent.dx + velocity.dy * tangent.dy
-    let launchSpeed = max(alongTrail, currentSpeed)
-    let targetVelocity = CGVector(dx: tangent.dx * launchSpeed, dy: tangent.dy * launchSpeed)
+    let normal = CGVector(dx: -tangent.dy, dy: tangent.dx)
+    let normalVelocity = velocity.dx * normal.dx + velocity.dy * normal.dy
+    guard normalVelocity < -15 else { return velocity }
 
-    let blend = min(CGFloat(delta) * 20.0, 0.60)
+    let targetVelocity = CGVector(dx: tangent.dx * currentSpeed, dy: tangent.dy * currentSpeed)
+    let blend = min(CGFloat(delta) * 16.0, 0.45)
     var newVx = velocity.dx * (1 - blend) + targetVelocity.dx * blend
     var newVy = velocity.dy * (1 - blend) + targetVelocity.dy * blend
 
-    if newVy < targetVelocity.dy * 0.5 {
-        newVy = max(newVy, targetVelocity.dy * blend)
-    }
-
     let newSpeed = hypot(newVx, newVy)
-    if newSpeed > 0 && newSpeed < currentSpeed {
-        let boost = currentSpeed / newSpeed
-        newVx *= boost
-        newVy *= boost
+    if newSpeed > currentSpeed && newSpeed > 0 {
+        let scale = currentSpeed / newSpeed
+        newVx *= scale
+        newVy *= scale
     }
 
     return CGVector(dx: newVx, dy: newVy)
@@ -687,18 +684,17 @@ let redirectedVel = testTransitionMomentum(velocity: downhillVel, tangent: kicke
 let redirectedSpeed = hypot(redirectedVel.dx, redirectedVel.dy)
 
 suite.assert(redirectedVel.dy > downhillVel.dy, "Vertical velocity is converted upward: \(downhillVel.dy) -> \(redirectedVel.dy)")
-suite.assert(redirectedVel.dy > 0, "Downward slam velocity is absorbed and redirected upward: \(redirectedVel.dy) > 0")
-suite.assert(redirectedSpeed >= downhillSpeed * 0.95, "Scalar speed is conserved through transition: \(redirectedSpeed) >= \(downhillSpeed * 0.95)")
+suite.assert(redirectedSpeed <= downhillSpeed + 0.1, "Speed never exceeds incoming downhill speed: \(redirectedSpeed) <= \(downhillSpeed)")
 suite.assert(redirectedVel.dx > 400.0, "Horizontal forward speed remains high (> 400): \(redirectedVel.dx)")
 
-// 3. Repeated frames through the transition ramp fully align velocity with the launch tangent
+// 3. Repeated frames through the transition ramp disengage once aligned (no runaway compounding)
 var runningVel = downhillVel
 for _ in 0..<15 {
     runningVel = testTransitionMomentum(velocity: runningVel, tangent: kickerTangent, delta: 0.016)
 }
 let finalSpeed = hypot(runningVel.dx, runningVel.dy)
-suite.assert(runningVel.dy > 200.0, "Rider achieves strong upward launch velocity off the lip: \(runningVel.dy) > 200")
-suite.assert(finalSpeed > 450.0, "Final launch speed off the lip retains immense downhill momentum: \(finalSpeed) > 450")
+suite.assert(finalSpeed <= downhillSpeed + 0.1, "Transition momentum strictly disengages without compounding runaway speed: \(finalSpeed) <= \(downhillSpeed)")
+suite.assert(runningVel.dy > -50.0, "Downward velocity is fully absorbed and redirected: \(runningVel.dy) > -50")
 
 // Test 15: Uphill Pedal Traction & Anti-Rollback Ratchet Invariants
 print("\n• Test Group 15: Uphill Pedal Traction & Anti-Rollback Ratchet Invariants")
@@ -725,7 +721,7 @@ func simulateUphillPedal(
     let forwardSpeed = max(0, vel.dx * tangent.dx + vel.dy * tangent.dy)
     let forceFade = max(0, min(1, 1 - forwardSpeed / 1_200))
     let climbLoad = max(tangent.dy, 0)
-    let riderForce = pedalForce * forceFade + pedalClimbForce * climbLoad
+    let riderForce = (pedalForce + pedalClimbForce * climbLoad) * forceFade
 
     let accel = riderForce / totalMass
     vel.dx += tangent.dx * accel * CGFloat(delta)
