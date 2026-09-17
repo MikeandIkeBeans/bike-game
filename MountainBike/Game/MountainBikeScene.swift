@@ -280,8 +280,19 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         }
 
         let alongTrail = bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy
+
+        // Anti-rollback ratcheting freewheel: if sliding backward on an uphill slope,
+        // cancel the backward slide so pedal drive immediately powers forward.
+        if alongTrail < 0 && tangent.dy > 0 {
+            for body in bike.allBodies {
+                body.velocity.dx -= tangent.dx * alongTrail
+                body.velocity.dy -= tangent.dy * alongTrail
+            }
+        }
+
+        let forwardSpeed = max(0, bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy)
         let forceFade = clamp(
-            1 - max(alongTrail, 0) / GameTuning.Handling.pedalFadeSpeed,
+            1 - forwardSpeed / GameTuning.Handling.pedalFadeSpeed,
             0,
             1
         )
@@ -290,16 +301,25 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             + GameTuning.Handling.pedalClimbForce * climbLoad
         guard riderForce > 0 else { return }
 
-        bike.chassisBody.isResting = false
-        bike.rearWheelBody.isResting = false
-        bike.chassisBody.applyForce(CGVector(
-            dx: tangent.dx * riderForce * 0.6,
-            dy: tangent.dy * riderForce * 0.6
-        ))
-        bike.rearWheelBody.applyForce(CGVector(
-            dx: tangent.dx * riderForce * 0.4,
-            dy: tangent.dy * riderForce * 0.4
-        ))
+        // Apply force across all bodies proportional to mass for smooth, unified acceleration
+        let forceVector = CGVector(
+            dx: tangent.dx * riderForce,
+            dy: tangent.dy * riderForce
+        )
+        let totalMass: CGFloat = GameTuning.Bike.chassisMass
+            + GameTuning.Bike.swingarmMass
+            + GameTuning.Bike.rearWheelMass
+            + GameTuning.Bike.frontForkMass
+            + GameTuning.Bike.frontWheelMass
+
+        for body in bike.allBodies {
+            body.isResting = false
+            let massFraction = body.mass / totalMass
+            body.applyForce(CGVector(
+                dx: forceVector.dx * massFraction,
+                dy: forceVector.dy * massFraction
+            ))
+        }
     }
 
     private func updatePedalRoost() {
@@ -325,32 +345,31 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     private func preserveTransitionMomentum() {
         guard isGrounded, let tangent = pedalSupportTangent() else { return }
         let currentSpeed = vectorLength(bike.velocity)
-        guard currentSpeed > 80 else { return }
+        // Engage on fast approaches into upward kickers / transition scoops
+        guard currentSpeed > 180, tangent.dy > 0.05, bike.velocity.dx > 100 else { return }
 
-        if tangent.dx > 0 {
-            let alongTrail = bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy
-            let launchSpeed = max(alongTrail, currentSpeed)
-            let targetVelocity = CGVector(dx: tangent.dx * launchSpeed, dy: tangent.dy * launchSpeed)
+        let alongTrail = bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy
+        let launchSpeed = max(alongTrail, currentSpeed)
+        let targetVelocity = CGVector(dx: tangent.dx * launchSpeed, dy: tangent.dy * launchSpeed)
 
-            let blend: CGFloat = min(CGFloat(frameDelta) * 20.0, 0.60)
-            var newVx = bike.velocity.dx * (1 - blend) + targetVelocity.dx * blend
-            var newVy = bike.velocity.dy * (1 - blend) + targetVelocity.dy * blend
+        let blend: CGFloat = min(CGFloat(frameDelta) * 20.0, 0.60)
+        var newVx = bike.velocity.dx * (1 - blend) + targetVelocity.dx * blend
+        var newVy = bike.velocity.dy * (1 - blend) + targetVelocity.dy * blend
 
-            if tangent.dy > 0 && newVy < targetVelocity.dy * 0.5 {
-                newVy = max(newVy, targetVelocity.dy * blend)
-            }
+        if newVy < targetVelocity.dy * 0.5 {
+            newVy = max(newVy, targetVelocity.dy * blend)
+        }
 
-            let newSpeed = hypot(newVx, newVy)
-            if newSpeed > 0 && newSpeed < currentSpeed {
-                let boost = currentSpeed / newSpeed
-                newVx *= boost
-                newVy *= boost
-            }
+        let newSpeed = hypot(newVx, newVy)
+        if newSpeed > 0 && newSpeed < currentSpeed {
+            let boost = currentSpeed / newSpeed
+            newVx *= boost
+            newVy *= boost
+        }
 
-            let newVelocity = CGVector(dx: newVx, dy: newVy)
-            bike.chassisBody.velocity = newVelocity
-            bike.rearWheelBody.velocity = newVelocity
-            bike.frontWheelBody.velocity = newVelocity
+        let newVelocity = CGVector(dx: newVx, dy: newVy)
+        for body in bike.allBodies {
+            body.velocity = newVelocity
         }
     }
 

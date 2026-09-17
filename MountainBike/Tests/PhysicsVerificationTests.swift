@@ -569,6 +569,7 @@ struct MockPenetrationRecovery {
     let wheelRadius: CGFloat = 16.0
     let frameGuardRadius: CGFloat = 10.0
     let recoveryClearance: CGFloat = 1.0
+    let trigger: CGFloat = 6.0
 
     mutating func recover(terrainY: CGFloat) {
         // Catastrophic tunneling rescue (checked first if severe breach)
@@ -583,18 +584,18 @@ struct MockPenetrationRecovery {
 
         let idealWheelY = terrainY + wheelRadius
         // Rear wheel recovery
-        if rearWheelY < idealWheelY {
+        if rearWheelY <= idealWheelY - trigger {
             rearWheelY = idealWheelY + recoveryClearance
             if rearWheelVy < 0 { rearWheelVy = 0 }
         }
         // Front wheel recovery
-        if frontWheelY < idealWheelY {
+        if frontWheelY <= idealWheelY - trigger {
             frontWheelY = idealWheelY + recoveryClearance
             if frontWheelVy < 0 { frontWheelVy = 0 }
         }
         // Chassis frame recovery
         let minChassisY = terrainY + frameGuardRadius
-        if chassisY < minChassisY {
+        if chassisY <= minChassisY - trigger {
             chassisY = minChassisY + recoveryClearance
             if chassisVy < 0 { chassisVy = 0 }
         }
@@ -607,7 +608,13 @@ pr1.recover(terrainY: 100)
 suite.assertEqual(pr1.rearWheelY, 130.0, "Above ground rear wheel position unchanged")
 suite.assertEqual(pr1.rearWheelVy, -50.0, "Above ground downward velocity preserved")
 
-// 2. Wheel penetrates surface (ideal is 100 + 16 = 116; current is 110)
+// 1b. Normal ground contact deflection (ideal is 116, contact deflection is 114.5): NO false recovery
+var pr1b = MockPenetrationRecovery(rearWheelY: 114.5, rearWheelVy: -10, frontWheelY: 114.5, frontWheelVy: -10, chassisY: 140, chassisVy: 0)
+pr1b.recover(terrainY: 100)
+suite.assertEqual(pr1b.rearWheelY, 114.5, "Normal contact deflection does NOT falsely trigger recovery: 114.5 == 114.5")
+suite.assertEqual(pr1b.rearWheelVy, -10.0, "Contact downward velocity not zeroed during normal contact: -10.0 == -10.0")
+
+// 2. Wheel genuinely penetrates surface by trigger threshold (ideal is 100 + 16 = 116; current is 110)
 var pr2 = MockPenetrationRecovery(rearWheelY: 110, rearWheelVy: -300, frontWheelY: 116, frontWheelVy: 0, chassisY: 140, chassisVy: 0)
 pr2.recover(terrainY: 100)
 suite.assertEqual(pr2.rearWheelY, 117.0, "Penetrating rear wheel clamped to idealY + recoveryClearance (117.0)")
@@ -638,8 +645,7 @@ suite.assertEqual(pr5.chassisVy, 0.0, "Rescued vertical velocity zeroed")
 print("\n• Test Group 14: Transition Momentum & Kicker Launch Invariants")
 func testTransitionMomentum(velocity: CGVector, tangent: CGVector, delta: TimeInterval = 0.016) -> CGVector {
     let currentSpeed = hypot(velocity.dx, velocity.dy)
-    guard currentSpeed > 80 else { return velocity }
-    guard tangent.dx > 0 else { return velocity }
+    guard currentSpeed > 180, tangent.dy > 0.05, velocity.dx > 100 else { return velocity }
 
     let alongTrail = velocity.dx * tangent.dx + velocity.dy * tangent.dy
     let launchSpeed = max(alongTrail, currentSpeed)
@@ -649,7 +655,7 @@ func testTransitionMomentum(velocity: CGVector, tangent: CGVector, delta: TimeIn
     var newVx = velocity.dx * (1 - blend) + targetVelocity.dx * blend
     var newVy = velocity.dy * (1 - blend) + targetVelocity.dy * blend
 
-    if tangent.dy > 0 && newVy < targetVelocity.dy * 0.5 {
+    if newVy < targetVelocity.dy * 0.5 {
         newVy = max(newVy, targetVelocity.dy * blend)
     }
 
@@ -663,11 +669,11 @@ func testTransitionMomentum(velocity: CGVector, tangent: CGVector, delta: TimeIn
     return CGVector(dx: newVx, dy: newVy)
 }
 
-// 1. Friction coefficient reduction
-let tireFriction: CGFloat = 0.15
-let terrainFriction: CGFloat = 0.20
+// 1. Mountain bike tire friction on dirt trail
+let tireFriction: CGFloat = 1.10
+let terrainFriction: CGFloat = 1.10
 let combinedMu = sqrt(tireFriction * terrainFriction)
-suite.assert(combinedMu < 0.25, "Combined friction coefficient (\(combinedMu)) is low-drag (< 0.25)")
+suite.assert(combinedMu >= 1.0, "Combined friction coefficient (\(combinedMu)) provides solid hill-climbing traction (>= 1.0)")
 
 // 2. Transition from downhill into an upward kicker ramp (+30 deg)
 // Downhill vector: fast forward and downward
@@ -681,7 +687,7 @@ let redirectedVel = testTransitionMomentum(velocity: downhillVel, tangent: kicke
 let redirectedSpeed = hypot(redirectedVel.dx, redirectedVel.dy)
 
 suite.assert(redirectedVel.dy > downhillVel.dy, "Vertical velocity is converted upward: \(downhillVel.dy) -> \(redirectedVel.dy)")
-suite.assert(redirectedVel.dy > -100, "Downward slam velocity is absorbed and redirected")
+suite.assert(redirectedVel.dy > 0, "Downward slam velocity is absorbed and redirected upward: \(redirectedVel.dy) > 0")
 suite.assert(redirectedSpeed >= downhillSpeed * 0.95, "Scalar speed is conserved through transition: \(redirectedSpeed) >= \(downhillSpeed * 0.95)")
 suite.assert(redirectedVel.dx > 400.0, "Horizontal forward speed remains high (> 400): \(redirectedVel.dx)")
 
@@ -693,6 +699,64 @@ for _ in 0..<15 {
 let finalSpeed = hypot(runningVel.dx, runningVel.dy)
 suite.assert(runningVel.dy > 200.0, "Rider achieves strong upward launch velocity off the lip: \(runningVel.dy) > 200")
 suite.assert(finalSpeed > 450.0, "Final launch speed off the lip retains immense downhill momentum: \(finalSpeed) > 450")
+
+// Test 15: Uphill Pedal Traction & Anti-Rollback Ratchet Invariants
+print("\n• Test Group 15: Uphill Pedal Traction & Anti-Rollback Ratchet Invariants")
+func simulateUphillPedal(
+    velocity: CGVector,
+    tangent: CGVector,
+    pedalHeld: Bool,
+    isGrounded: Bool,
+    pedalForce: CGFloat = 18_000,
+    pedalClimbForce: CGFloat = 38_000,
+    totalMass: CGFloat = 6.6,
+    delta: TimeInterval = 0.016
+) -> CGVector {
+    guard pedalHeld, isGrounded else { return velocity }
+    var vel = velocity
+    let alongTrail = vel.dx * tangent.dx + vel.dy * tangent.dy
+
+    // Anti-rollback ratchet
+    if alongTrail < 0 && tangent.dy > 0 {
+        vel.dx -= tangent.dx * alongTrail
+        vel.dy -= tangent.dy * alongTrail
+    }
+
+    let forwardSpeed = max(0, vel.dx * tangent.dx + vel.dy * tangent.dy)
+    let forceFade = max(0, min(1, 1 - forwardSpeed / 1_200))
+    let climbLoad = max(tangent.dy, 0)
+    let riderForce = pedalForce * forceFade + pedalClimbForce * climbLoad
+
+    let accel = riderForce / totalMass
+    vel.dx += tangent.dx * accel * CGFloat(delta)
+    vel.dy += tangent.dy * accel * CGFloat(delta)
+    return vel
+}
+
+// 1. Sliding backward down a 25-degree hill (-50 backward velocity along trail)
+let hillAngle = CGFloat.pi / 7.2 // ~25 degrees
+let hillTangent = CGVector(dx: cos(hillAngle), dy: sin(hillAngle))
+let backwardVel = CGVector(dx: -hillTangent.dx * 50, dy: -hillTangent.dy * 50)
+
+let engagedVel = simulateUphillPedal(velocity: backwardVel, tangent: hillTangent, pedalHeld: true, isGrounded: true)
+let engagedTrailSpeed = engagedVel.dx * hillTangent.dx + engagedVel.dy * hillTangent.dy
+suite.assert(engagedTrailSpeed > 0, "Anti-rollback ratchet cancels backward slide and drives forward: \(engagedTrailSpeed) > 0")
+
+// 2. Starting from a dead stop on a 30-degree steep hill
+let steepAngle = CGFloat.pi / 6.0 // 30 degrees (slope 0.577)
+let steepTangent = CGVector(dx: cos(steepAngle), dy: sin(steepAngle))
+let stopVel = CGVector.zero
+
+let accelVel = simulateUphillPedal(velocity: stopVel, tangent: steepTangent, pedalHeld: true, isGrounded: true)
+let climbSpeedAfter1Frame = accelVel.dx * steepTangent.dx + accelVel.dy * steepTangent.dy
+// With 38,000 climb force on 6.6 kg, acceleration is ~5,600 pt/s^2 (~90 pt/s in 1 frame)
+suite.assert(climbSpeedAfter1Frame > 70.0, "Pedal climb force powers bike up steep 30° hill from dead stop: \(climbSpeedAfter1Frame) > 70 pt/s")
+
+// 3. Normal low-speed pedaling does not trigger transition momentum boost
+let slowClimbVel = CGVector(dx: 60.0, dy: 30.0)
+let untouchedVel = testTransitionMomentum(velocity: slowClimbVel, tangent: steepTangent)
+suite.assertEqual(untouchedVel.dx, slowClimbVel.dx, "Low-speed climbing does not trigger transition boost (Vx unchanged)")
+suite.assertEqual(untouchedVel.dy, slowClimbVel.dy, "Low-speed climbing does not trigger transition boost (Vy unchanged)")
 
 let allPassed = suite.summary()
 exit(allPassed ? 0 : 1)

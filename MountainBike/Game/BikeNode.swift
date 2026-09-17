@@ -270,10 +270,12 @@ final class BikeNode: SKNode {
         let wheelRadius = GameTuning.Bike.collisionWheelRadius
         let recoveryClearance = GameTuning.Terrain.wheelPenetrationRecoveryClearance
 
+        let trigger = GameTuning.Terrain.wheelPenetrationRecoveryTrigger
+
         // 1. Recover rear wheel
         let rearTerrainY = terrainHeightAt(rearWheel.position.x)
         let idealRearY = rearTerrainY + wheelRadius
-        if rearWheel.position.y < idealRearY {
+        if rearWheel.position.y <= idealRearY - trigger {
             rearWheel.position.y = idealRearY + recoveryClearance
             if let body = rearWheel.physicsBody, body.velocity.dy < 0 {
                 body.velocity.dy = 0
@@ -283,7 +285,7 @@ final class BikeNode: SKNode {
         // 2. Recover front wheel
         let frontTerrainY = terrainHeightAt(frontWheel.position.x)
         let idealFrontY = frontTerrainY + wheelRadius
-        if frontWheel.position.y < idealFrontY {
+        if frontWheel.position.y <= idealFrontY - trigger {
             frontWheel.position.y = idealFrontY + recoveryClearance
             if let body = frontWheel.physicsBody, body.velocity.dy < 0 {
                 body.velocity.dy = 0
@@ -293,7 +295,7 @@ final class BikeNode: SKNode {
         // 3. Recover chassis frame
         let chassisTerrainY = terrainHeightAt(chassis.position.x)
         let minChassisY = chassisTerrainY + GameTuning.Bike.frameGuardRadius
-        if chassis.position.y < minChassisY {
+        if chassis.position.y <= minChassisY - trigger {
             chassis.position.y = minChassisY + recoveryClearance
             if let body = chassis.physicsBody, body.velocity.dy < 0 {
                 body.velocity.dy = 0
