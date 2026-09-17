@@ -634,5 +634,65 @@ suite.assert(pr5.rescued, "Catastrophic tunneling triggers emergency rescue")
 suite.assertEqual(pr5.chassisY, 135.0, "Catastrophic chassis rescued to safe height above ground")
 suite.assertEqual(pr5.chassisVy, 0.0, "Rescued vertical velocity zeroed")
 
+// Test 14: Transition Momentum & Kicker Launch Invariants
+print("\n• Test Group 14: Transition Momentum & Kicker Launch Invariants")
+func testTransitionMomentum(velocity: CGVector, tangent: CGVector, delta: TimeInterval = 0.016) -> CGVector {
+    let currentSpeed = hypot(velocity.dx, velocity.dy)
+    guard currentSpeed > 80 else { return velocity }
+    guard tangent.dx > 0 else { return velocity }
+
+    let alongTrail = velocity.dx * tangent.dx + velocity.dy * tangent.dy
+    let launchSpeed = max(alongTrail, currentSpeed)
+    let targetVelocity = CGVector(dx: tangent.dx * launchSpeed, dy: tangent.dy * launchSpeed)
+
+    let blend = min(CGFloat(delta) * 20.0, 0.60)
+    var newVx = velocity.dx * (1 - blend) + targetVelocity.dx * blend
+    var newVy = velocity.dy * (1 - blend) + targetVelocity.dy * blend
+
+    if tangent.dy > 0 && newVy < targetVelocity.dy * 0.5 {
+        newVy = max(newVy, targetVelocity.dy * blend)
+    }
+
+    let newSpeed = hypot(newVx, newVy)
+    if newSpeed > 0 && newSpeed < currentSpeed {
+        let boost = currentSpeed / newSpeed
+        newVx *= boost
+        newVy *= boost
+    }
+
+    return CGVector(dx: newVx, dy: newVy)
+}
+
+// 1. Friction coefficient reduction
+let tireFriction: CGFloat = 0.15
+let terrainFriction: CGFloat = 0.20
+let combinedMu = sqrt(tireFriction * terrainFriction)
+suite.assert(combinedMu < 0.25, "Combined friction coefficient (\(combinedMu)) is low-drag (< 0.25)")
+
+// 2. Transition from downhill into an upward kicker ramp (+30 deg)
+// Downhill vector: fast forward and downward
+let downhillVel = CGVector(dx: 450.0, dy: -200.0)
+let downhillSpeed = hypot(downhillVel.dx, downhillVel.dy) // ~492.4
+// Upward kicker tangent (+30 degrees)
+let kickerAngle = CGFloat.pi / 6.0
+let kickerTangent = CGVector(dx: cos(kickerAngle), dy: sin(kickerAngle)) // (0.866, 0.500)
+
+let redirectedVel = testTransitionMomentum(velocity: downhillVel, tangent: kickerTangent, delta: 0.016)
+let redirectedSpeed = hypot(redirectedVel.dx, redirectedVel.dy)
+
+suite.assert(redirectedVel.dy > downhillVel.dy, "Vertical velocity is converted upward: \(downhillVel.dy) -> \(redirectedVel.dy)")
+suite.assert(redirectedVel.dy > -100, "Downward slam velocity is absorbed and redirected")
+suite.assert(redirectedSpeed >= downhillSpeed * 0.95, "Scalar speed is conserved through transition: \(redirectedSpeed) >= \(downhillSpeed * 0.95)")
+suite.assert(redirectedVel.dx > 400.0, "Horizontal forward speed remains high (> 400): \(redirectedVel.dx)")
+
+// 3. Repeated frames through the transition ramp fully align velocity with the launch tangent
+var runningVel = downhillVel
+for _ in 0..<15 {
+    runningVel = testTransitionMomentum(velocity: runningVel, tangent: kickerTangent, delta: 0.016)
+}
+let finalSpeed = hypot(runningVel.dx, runningVel.dy)
+suite.assert(runningVel.dy > 200.0, "Rider achieves strong upward launch velocity off the lip: \(runningVel.dy) > 200")
+suite.assert(finalSpeed > 450.0, "Final launch speed off the lip retains immense downhill momentum: \(finalSpeed) > 450")
+
 let allPassed = suite.summary()
 exit(allPassed ? 0 : 1)

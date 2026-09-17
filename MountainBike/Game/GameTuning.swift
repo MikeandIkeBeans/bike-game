@@ -159,7 +159,7 @@ enum GameTuning {
         /// Visual-only wheels cannot spin their own bodies to overcome static
         /// friction. Low friction lets the compound body slide smoothly while
         /// the visual wheels roll from real travel.
-        static let tireFriction: CGFloat = 1.10
+        static let tireFriction: CGFloat = 0.15
         static let restitution: CGFloat = 0.08
         static let maximumSpeed: CGFloat = 1_500
         static let maximumChassisAngularVelocity: CGFloat = 4.0
@@ -188,7 +188,7 @@ enum GameTuning {
         /// Finer rails follow the visual curve closely, avoiding sharp normal
         /// changes that bleed a downhill run's stored velocity.
         static let maximumColliderSegmentLength: CGFloat = 5
-        static let friction: CGFloat = 1.10
+        static let friction: CGFloat = 0.20
         static let restitution: CGFloat = 0.08
         /// SpriteKit's edge rails can rarely leave a tire just across the
         /// wrong side of a landing. Only this shallow overlap is nudged back;

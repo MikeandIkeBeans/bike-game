@@ -251,6 +251,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
                 bike.chassisBody.velocity = CGVector(dx: currentSpeed, dy: 0)
             }
 
+            preserveTransitionMomentum()
             elapsedRunTime += frameDelta
             bike.updateVisuals(deltaTime: frameDelta, leanInput: leanInput, pedalHeld: pedalHeld)
             capVehicleMotion()
@@ -314,6 +315,42 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
                 y: bike.rearAxlePosition.y - GameTuning.Bike.collisionWheelRadius
             )
             emitPedalRoost(at: contactPoint)
+        }
+    }
+
+    /// In real downhill mountain biking, a transition curve ("scoop" or "compression")
+    /// redirects high downhill speed upward along the launch ramp rather than
+    /// acting like an inelastic wall collision. This preserves the rider's kinetic
+    /// energy along the ramp tangent, allowing fast descents to launch high into the air.
+    private func preserveTransitionMomentum() {
+        guard isGrounded, let tangent = pedalSupportTangent() else { return }
+        let currentSpeed = vectorLength(bike.velocity)
+        guard currentSpeed > 80 else { return }
+
+        if tangent.dx > 0 {
+            let alongTrail = bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy
+            let launchSpeed = max(alongTrail, currentSpeed)
+            let targetVelocity = CGVector(dx: tangent.dx * launchSpeed, dy: tangent.dy * launchSpeed)
+
+            let blend: CGFloat = min(CGFloat(frameDelta) * 20.0, 0.60)
+            var newVx = bike.velocity.dx * (1 - blend) + targetVelocity.dx * blend
+            var newVy = bike.velocity.dy * (1 - blend) + targetVelocity.dy * blend
+
+            if tangent.dy > 0 && newVy < targetVelocity.dy * 0.5 {
+                newVy = max(newVy, targetVelocity.dy * blend)
+            }
+
+            let newSpeed = hypot(newVx, newVy)
+            if newSpeed > 0 && newSpeed < currentSpeed {
+                let boost = currentSpeed / newSpeed
+                newVx *= boost
+                newVy *= boost
+            }
+
+            let newVelocity = CGVector(dx: newVx, dy: newVy)
+            bike.chassisBody.velocity = newVelocity
+            bike.rearWheelBody.velocity = newVelocity
+            bike.frontWheelBody.velocity = newVelocity
         }
     }
 
