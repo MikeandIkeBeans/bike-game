@@ -232,6 +232,25 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         guard isConfigured else { return }
 
         if runState == .riding {
+            bike.recoverTerrainPenetration { [weak self] x in
+                guard let self = self else { return 0 }
+                return self.terrainStream.surfaceTerrainHeight(at: x) ?? self.terrainStream.terrainHeight(at: x)
+            }
+
+            // Catastrophic tunneling failsafe: if a frame hitch or solver glitch
+            // ever places the chassis >25 units beneath the terrain line,
+            // immediately rescue the bike back onto the trail with preserved momentum.
+            let chassisX = bike.chassisPosition.x
+            let terrainY = terrainStream.surfaceTerrainHeight(at: chassisX) ?? terrainStream.terrainHeight(at: chassisX)
+            if bike.chassisPosition.y < terrainY - 25 {
+                let attitude = terrainStream.supportAngle(at: chassisX)
+                let safeY = terrainY + bike.spawnClearance(for: attitude) + 2.0
+                let currentSpeed = max(bike.velocity.dx, 150)
+                bike.reset(at: CGPoint(x: chassisX, y: safeY), attitude: attitude)
+                bike.activatePhysics()
+                bike.chassisBody.velocity = CGVector(dx: currentSpeed, dy: 0)
+            }
+
             elapsedRunTime += frameDelta
             bike.updateVisuals(deltaTime: frameDelta, leanInput: leanInput, pedalHeld: pedalHeld)
             capVehicleMotion()

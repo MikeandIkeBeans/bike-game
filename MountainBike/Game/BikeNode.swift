@@ -262,6 +262,45 @@ final class BikeNode: SKNode {
         return true
     }
 
+    /// Safeguards against Box2D edge tunneling at high speeds and hard landings.
+    /// Clamps wheel and chassis positions to always remain above the terrain surface,
+    /// cancelling downward penetration momentum and preventing the bike from falling
+    /// through the map.
+    func recoverTerrainPenetration(terrainHeightAt: (CGFloat) -> CGFloat) {
+        let wheelRadius = GameTuning.Bike.collisionWheelRadius
+        let recoveryClearance = GameTuning.Terrain.wheelPenetrationRecoveryClearance
+
+        // 1. Recover rear wheel
+        let rearTerrainY = terrainHeightAt(rearWheel.position.x)
+        let idealRearY = rearTerrainY + wheelRadius
+        if rearWheel.position.y < idealRearY {
+            rearWheel.position.y = idealRearY + recoveryClearance
+            if let body = rearWheel.physicsBody, body.velocity.dy < 0 {
+                body.velocity.dy = 0
+            }
+        }
+
+        // 2. Recover front wheel
+        let frontTerrainY = terrainHeightAt(frontWheel.position.x)
+        let idealFrontY = frontTerrainY + wheelRadius
+        if frontWheel.position.y < idealFrontY {
+            frontWheel.position.y = idealFrontY + recoveryClearance
+            if let body = frontWheel.physicsBody, body.velocity.dy < 0 {
+                body.velocity.dy = 0
+            }
+        }
+
+        // 3. Recover chassis frame
+        let chassisTerrainY = terrainHeightAt(chassis.position.x)
+        let minChassisY = chassisTerrainY + GameTuning.Bike.frameGuardRadius
+        if chassis.position.y < minChassisY {
+            chassis.position.y = minChassisY + recoveryClearance
+            if let body = chassis.physicsBody, body.velocity.dy < 0 {
+                body.velocity.dy = 0
+            }
+        }
+    }
+
     /// The visual wheels rotate naturally from friction with the ground in the
     /// physics engine. Here we update the live shock visual, rider posture,
     /// and cap excessive spin, speed, and non-finite values a hard impact can produce.

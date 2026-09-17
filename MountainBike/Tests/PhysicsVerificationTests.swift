@@ -555,5 +555,84 @@ suite.assertNear(rp.posX, 0.0, accuracy: 0.1, "Pedal-only target X returns to ce
 suite.assertNear(rp.posY, -3.0, accuracy: 0.1, "Pedal crouch remains at -3.0")
 suite.assertNear(rp.rot, 0.0, accuracy: 0.01, "Pedal rotation returns to 0.0")
 
+// Test 13: Anti-Tunneling Terrain Penetration Recovery Invariants
+print("\n• Test Group 13: Anti-Tunneling Terrain Penetration Recovery Invariants")
+struct MockPenetrationRecovery {
+    var rearWheelY: CGFloat
+    var rearWheelVy: CGFloat
+    var frontWheelY: CGFloat
+    var frontWheelVy: CGFloat
+    var chassisY: CGFloat
+    var chassisVy: CGFloat
+    var rescued = false
+
+    let wheelRadius: CGFloat = 16.0
+    let frameGuardRadius: CGFloat = 10.0
+    let recoveryClearance: CGFloat = 1.0
+
+    mutating func recover(terrainY: CGFloat) {
+        // Catastrophic tunneling rescue (checked first if severe breach)
+        if chassisY < terrainY - 25 {
+            rescued = true
+            chassisY = terrainY + 35
+            chassisVy = 0
+            rearWheelY = terrainY + wheelRadius + recoveryClearance
+            frontWheelY = terrainY + wheelRadius + recoveryClearance
+            return
+        }
+
+        let idealWheelY = terrainY + wheelRadius
+        // Rear wheel recovery
+        if rearWheelY < idealWheelY {
+            rearWheelY = idealWheelY + recoveryClearance
+            if rearWheelVy < 0 { rearWheelVy = 0 }
+        }
+        // Front wheel recovery
+        if frontWheelY < idealWheelY {
+            frontWheelY = idealWheelY + recoveryClearance
+            if frontWheelVy < 0 { frontWheelVy = 0 }
+        }
+        // Chassis frame recovery
+        let minChassisY = terrainY + frameGuardRadius
+        if chassisY < minChassisY {
+            chassisY = minChassisY + recoveryClearance
+            if chassisVy < 0 { chassisVy = 0 }
+        }
+    }
+}
+
+// 1. Wheel and chassis comfortably above ground: no adjustment
+var pr1 = MockPenetrationRecovery(rearWheelY: 130, rearWheelVy: -50, frontWheelY: 130, frontWheelVy: -50, chassisY: 150, chassisVy: -50)
+pr1.recover(terrainY: 100)
+suite.assertEqual(pr1.rearWheelY, 130.0, "Above ground rear wheel position unchanged")
+suite.assertEqual(pr1.rearWheelVy, -50.0, "Above ground downward velocity preserved")
+
+// 2. Wheel penetrates surface (ideal is 100 + 16 = 116; current is 110)
+var pr2 = MockPenetrationRecovery(rearWheelY: 110, rearWheelVy: -300, frontWheelY: 116, frontWheelVy: 0, chassisY: 140, chassisVy: 0)
+pr2.recover(terrainY: 100)
+suite.assertEqual(pr2.rearWheelY, 117.0, "Penetrating rear wheel clamped to idealY + recoveryClearance (117.0)")
+suite.assertEqual(pr2.rearWheelVy, 0.0, "Penetrating rear wheel downward velocity cancelled")
+
+// 3. Severe wheel breach below terrain line (current is 90, terrain is 100)
+var pr3 = MockPenetrationRecovery(rearWheelY: 90, rearWheelVy: -800, frontWheelY: 92, frontWheelVy: -750, chassisY: 120, chassisVy: -400)
+pr3.recover(terrainY: 100)
+suite.assertEqual(pr3.rearWheelY, 117.0, "Subterranean rear wheel restored above surface")
+suite.assertEqual(pr3.frontWheelY, 117.0, "Subterranean front wheel restored above surface")
+suite.assertEqual(pr3.rearWheelVy, 0.0, "Subterranean rear downward velocity zeroed")
+suite.assertEqual(pr3.frontWheelVy, 0.0, "Subterranean front downward velocity zeroed")
+
+// 4. Chassis frame bottom-out penetration (min allowed is 100 + 10 = 110; current is 104)
+var pr4 = MockPenetrationRecovery(rearWheelY: 117, rearWheelVy: 0, frontWheelY: 117, frontWheelVy: 0, chassisY: 104, chassisVy: -250)
+pr4.recover(terrainY: 100)
+suite.assertEqual(pr4.chassisY, 111.0, "Chassis frame clamped to minChassisY + recoveryClearance (111.0)")
+suite.assertEqual(pr4.chassisVy, 0.0, "Chassis downward velocity zeroed")
+
+// 5. Catastrophic tunneling rescue (>25 units below terrain)
+var pr5 = MockPenetrationRecovery(rearWheelY: 60, rearWheelVy: -1000, frontWheelY: 60, frontWheelVy: -1000, chassisY: 65, chassisVy: -1000)
+pr5.recover(terrainY: 100)
+suite.assert(pr5.rescued, "Catastrophic tunneling triggers emergency rescue")
+suite.assertEqual(pr5.chassisY, 135.0, "Catastrophic chassis rescued to safe height above ground")
+suite.assertEqual(pr5.chassisVy, 0.0, "Rescued vertical velocity zeroed")
+
 let allPassed = suite.summary()
 exit(allPassed ? 0 : 1)
