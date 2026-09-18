@@ -531,7 +531,7 @@ final class BikeNode: SKNode {
         cBody.mass = GameTuning.Bike.chassisMass
         cBody.linearDamping = GameTuning.Bike.chassisLinearDamping
         cBody.angularDamping = GameTuning.Bike.chassisAngularDamping
-        cBody.friction = GameTuning.Bike.tireFriction
+        cBody.friction = GameTuning.Bike.chassisFriction
         cBody.restitution = GameTuning.Bike.restitution
         cBody.affectedByGravity = true
         cBody.allowsRotation = true
@@ -551,7 +551,7 @@ final class BikeNode: SKNode {
         sBody.mass = GameTuning.Bike.swingarmMass
         sBody.linearDamping = GameTuning.Bike.componentLinearDamping
         sBody.angularDamping = GameTuning.Bike.swingarmAngularDamping
-        sBody.friction = GameTuning.Bike.tireFriction
+        sBody.friction = GameTuning.Bike.chassisFriction
         sBody.restitution = GameTuning.Bike.restitution
         sBody.affectedByGravity = true
         sBody.allowsRotation = true
@@ -600,7 +600,7 @@ final class BikeNode: SKNode {
         ffBody.mass = GameTuning.Bike.frontForkMass
         ffBody.linearDamping = GameTuning.Bike.componentLinearDamping
         ffBody.angularDamping = GameTuning.Bike.frontForkAngularDamping
-        ffBody.friction = GameTuning.Bike.tireFriction
+        ffBody.friction = GameTuning.Bike.chassisFriction
         ffBody.restitution = GameTuning.Bike.restitution
         ffBody.affectedByGravity = true
         ffBody.allowsRotation = true

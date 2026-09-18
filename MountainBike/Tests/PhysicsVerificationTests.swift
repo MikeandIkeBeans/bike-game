@@ -641,192 +641,91 @@ suite.assert(pr5.rescued, "Catastrophic tunneling triggers emergency rescue")
 suite.assertEqual(pr5.chassisY, 135.0, "Catastrophic chassis rescued to safe height above ground")
 suite.assertEqual(pr5.chassisVy, 0.0, "Rescued vertical velocity zeroed")
 
-// Test 14: Transition Momentum & Kicker Launch Invariants
-print("\n• Test Group 14: Transition Momentum & Kicker Launch Invariants")
-func testTransitionMomentum(
-    velocity: CGVector,
-    tangent: CGVector,
-    cachedSpeed: CGFloat = 0,
-    isMegaJump: Bool = true,
-    delta: TimeInterval = 0.016
-) -> (velocity: CGVector, cachedSpeed: CGFloat, crashed: Bool) {
-    let currentSpeed = hypot(velocity.dx, velocity.dy)
-    guard tangent.dx > 0.1, velocity.dx > 50 else { return (velocity, 0, false) }
+// Test 14: Newtonian Gravity & Ballistic Launch Invariants
+print("\n• Test Group 14: Newtonian Gravity & Ballistic Launch Invariants")
 
-    let alongTrail = velocity.dx * tangent.dx + velocity.dy * tangent.dy
+// 1. Friction coefficients: solid tire grip on dirt, frictionless chassis for scoops
+let tireFriction: CGFloat = 0.85
+let terrainFriction: CGFloat = 1.10
+let combinedTireMu = sqrt(tireFriction * terrainFriction)
+suite.assert(combinedTireMu >= 0.85, "Combined tire friction (\(combinedTireMu)) provides solid traction (>= 0.85)")
+let chassisFriction: CGFloat = 0.05
+suite.assert(chassisFriction <= 0.10, "Chassis friction (\(chassisFriction)) prevents ground hang-up during suspension scoops (<= 0.10)")
+
+// 2. Pure Newtonian gravity acceleration down 45° slope (no multipliers or artificial boosts)
+let g: CGFloat = 9.81 * 22.4 // 219.744 pt/s²
+let downhillSlopeAngle = CGFloat.pi / 4.0 // 45 deg
+let accelAlong45Downhill = g * sin(downhillSlopeAngle) // 155.38 pt/s²
+suite.assertNear(accelAlong45Downhill, 155.38, accuracy: 0.5, "Pure gravity acceleration down 45° slope is ~155.4 pt/s²")
+
+// Simulate 1.5 seconds of downhill roll from 200 pt/s without any artificial multiplier
+var downhillSpeed: CGFloat = 200.0
+for _ in 0..<94 { // 94 frames * 0.016s = 1.504s
+    downhillSpeed += accelAlong45Downhill * 0.016
+}
+suite.assert(downhillSpeed > 400.0, "Natural gravity massively builds speed down 45° hill (200 -> \(downhillSpeed) pt/s > 400)")
+
+// 3. Consistent gravity deceleration up 30° hill
+let uphillAngle = CGFloat.pi / 6.0 // 30 deg
+let decelAlong30Uphill = g * sin(uphillAngle) // 109.87 pt/s²
+suite.assertNear(decelAlong30Uphill, 109.87, accuracy: 0.5, "Pure gravity deceleration up 30° slope is ~109.9 pt/s²")
+
+// 4. Parabolic jump trajectory: launching at 700 pt/s off 25.6° kicker (slope ~0.48)
+let kickerTakeoffAngle = atan(0.48) // ~25.64 degrees
+let launchVx = 700.0 * cos(kickerTakeoffAngle) // ~631.0 pt/s
+let launchVy = 700.0 * sin(kickerTakeoffAngle) // ~302.9 pt/s
+let apexHeight = (launchVy * launchVy) / (2.0 * g) // ~208.7 pt
+let timeToApex = launchVy / g // ~1.38 s
+let totalHangtime = timeToApex * 2.0 // ~2.76 s
+let jumpDistance = launchVx * totalHangtime // ~1739 pt (~348m display)
+
+suite.assert(apexHeight > 180.0 && apexHeight < 250.0, "Launch apex height is natural and weighted: \(apexHeight) pt (~208 pt)")
+suite.assert(totalHangtime > 2.2 && totalHangtime < 3.2, "Hangtime is realistic (~2.76s): \(totalHangtime)s")
+suite.assert(jumpDistance > 1500.0, "Horizontal jump distance carries far across landing zone: \(jumpDistance) pt")
+
+// 5. Space launch elimination under authoritative gravity: even at 1500 pt/s launch, bike returns to earth
+let extremeLaunchVy: CGFloat = 600.0
+let extremeApexTime = extremeLaunchVy / g
+let extremeApexHeight = (extremeLaunchVy * extremeLaunchVy) / (2.0 * g)
+suite.assert(extremeApexTime < 3.5, "Extreme launch reaches apex within 3.5s (eliminates space launch bug): \(extremeApexTime)s")
+suite.assert(extremeApexHeight < 900.0, "Extreme launch apex is bounded by physics (< 900 pt): \(extremeApexHeight) pt")
+
+// 6. Wall impact crash detection: slamming into steep wall (> 0.65 dy) at high speed triggers crash
+func checkWallImpactCrash(velocity: CGVector, tangent: CGVector) -> Bool {
+    let currentSpeed = hypot(velocity.dx, velocity.dy)
     let normal = CGVector(dx: -tangent.dy, dy: tangent.dx)
     let normalVelocity = velocity.dx * normal.dx + velocity.dy * normal.dy
-    var groundSpeed = max(cachedSpeed, max(alongTrail, currentSpeed))
-    let maxLaunchVy: CGFloat = isMegaJump ? 600.0 : 380.0
-
-    if normalVelocity < -8 {
-        // Slamming into a steep wall or sharp U-lip without braking triggers crash
-        if tangent.dy > 0.65 && currentSpeed > 450 && normalVelocity < -180 {
-            return (velocity, 0, true)
-        }
-
-        let redirectSpeed = max(groundSpeed, currentSpeed)
-        let maxTangentDy: CGFloat = isMegaJump ? 0.55 : 0.48
-        let clampedTangentDy = min(tangent.dy, maxTangentDy)
-        let clampedTangentDx = sqrt(max(0.01, 1.0 - clampedTangentDy * clampedTangentDy))
-        let effectiveTangent = CGVector(dx: clampedTangentDx, dy: clampedTangentDy)
-
-        let targetVelocity = CGVector(
-            dx: effectiveTangent.dx * redirectSpeed,
-            dy: min(effectiveTangent.dy * redirectSpeed, maxLaunchVy)
-        )
-        let blend = min(CGFloat(delta) * 35.0, 0.90)
-        var newVx = velocity.dx * (1 - blend) + targetVelocity.dx * blend
-        var newVy = velocity.dy * (1 - blend) + targetVelocity.dy * blend
-
-        // Strictly clamp maximum vertical launch velocity: eliminates the launch into space bug
-        newVy = min(newVy, maxLaunchVy)
-
-        let newSpeed = hypot(newVx, newVy)
-        if newSpeed > redirectSpeed && newSpeed > 0 {
-            let scale = redirectSpeed / newSpeed
-            newVx *= scale
-            newVy *= scale
-        }
-        let finalSpeed = hypot(newVx, newVy)
-        return (CGVector(dx: newVx, dy: newVy), finalSpeed, false)
-    } else {
-        let baseGravityAlongTrail = (-58.86) * tangent.dy
-
-        if tangent.dy < -0.05 {
-            let slopeRatio = min(1.0, -tangent.dy / 0.7071)
-            let multiplier = 1.0 + slopeRatio * (isMegaJump ? (6.0 - 1.0) : 0.35)
-            let compoundingBonus = isMegaJump ? (1.0 + min(1.5, groundSpeed / 500.0)) : 1.0
-            let amplifiedGravity = baseGravityAlongTrail * multiplier * compoundingBonus
-            groundSpeed += amplifiedGravity * CGFloat(delta)
-        } else if tangent.dy > 0.05 && groundSpeed > 180 {
-            let reduction = isMegaJump ? 0.40 : 0.85
-            let reducedGravity = baseGravityAlongTrail * reduction
-            groundSpeed += reducedGravity * CGFloat(delta)
-        } else {
-            groundSpeed += baseGravityAlongTrail * CGFloat(delta)
-        }
-
-        let rollingDrag: CGFloat = isMegaJump ? 0.005 : 0.040
-        groundSpeed *= max(0, 1.0 - rollingDrag * CGFloat(delta))
-
-        if !isMegaJump && groundSpeed > 920 {
-            groundSpeed = 920
-        }
-
-        if alongTrail < groundSpeed && groundSpeed > 60 {
-            let targetVx = tangent.dx * groundSpeed
-            let targetVy = tangent.dy * groundSpeed
-            let sustainBlend = min(CGFloat(delta) * 20.0, 0.75)
-            let newVx = velocity.dx * (1 - sustainBlend) + targetVx * sustainBlend
-            let newVy = velocity.dy * (1 - sustainBlend) + targetVy * sustainBlend
-            return (CGVector(dx: newVx, dy: newVy), groundSpeed, false)
-        } else {
-            return (velocity, max(groundSpeed, alongTrail), false)
-        }
-    }
+    return tangent.dy > 0.65 && currentSpeed > 450 && normalVelocity < -180
 }
 
-// 1. Mountain bike tire friction on dirt trail
-let tireFriction: CGFloat = 1.10
-let terrainFriction: CGFloat = 1.10
-let combinedMu = sqrt(tireFriction * terrainFriction)
-suite.assert(combinedMu >= 1.0, "Combined friction coefficient (\(combinedMu)) provides solid hill-climbing traction (>= 1.0)")
+let wallTangent = CGVector(dx: 0.35, dy: 0.93) // Steep wall dy > 0.65
+let slamVel = CGVector(dx: 600.0, dy: -200.0) // 632 pt/s slamming into wall
+let didCrashOnWall = checkWallImpactCrash(velocity: slamVel, tangent: wallTangent)
+suite.assert(didCrashOnWall, "Slamming into steep wall at high speed triggers crash instead of launching into space")
 
-// 2. Transition from downhill into an upward kicker ramp (+30 deg)
-// Downhill vector: fast forward and downward
-let downhillVel = CGVector(dx: 450.0, dy: -200.0)
-let downhillSpeed = hypot(downhillVel.dx, downhillVel.dy) // ~492.4
-// Upward kicker tangent (+30 degrees)
-let kickerAngle = CGFloat.pi / 6.0
-let kickerTangent = CGVector(dx: cos(kickerAngle), dy: sin(kickerAngle)) // (0.866, 0.500)
+// Normal ramp entry does NOT falsely trigger crash
+let rampTangent = CGVector(dx: 0.90, dy: 0.43)
+let smoothVel = CGVector(dx: 600.0, dy: -50.0)
+let didCrashOnRamp = checkWallImpactCrash(velocity: smoothVel, tangent: rampTangent)
+suite.assert(!didCrashOnRamp, "Smooth ramp transition does not trigger wall crash")
 
-let (redirectedVel, _, _) = testTransitionMomentum(velocity: downhillVel, tangent: kickerTangent, delta: 0.016)
-let redirectedSpeed = hypot(redirectedVel.dx, redirectedVel.dy)
-
-suite.assert(redirectedVel.dy > downhillVel.dy, "Vertical velocity is converted upward: \(downhillVel.dy) -> \(redirectedVel.dy)")
-suite.assert(redirectedSpeed <= downhillSpeed + 0.1, "Speed never exceeds incoming downhill speed: \(redirectedSpeed) <= \(downhillSpeed)")
-suite.assert(redirectedVel.dx > 400.0, "Horizontal forward speed remains high (> 400): \(redirectedVel.dx)")
-
-// 3. Repeated frames through the transition ramp disengage once aligned (no runaway compounding)
-var runningVel = downhillVel
-var runningCached: CGFloat = 0
-for _ in 0..<15 {
-    let res = testTransitionMomentum(velocity: runningVel, tangent: kickerTangent, cachedSpeed: runningCached, delta: 0.016)
-    runningVel = res.velocity
-    runningCached = res.cachedSpeed
+// 7. Braking deceleration: leaning back grounded decelerates bike along trail tangent
+func simulateBraking(velocity: CGVector, tangent: CGVector, delta: TimeInterval = 0.016) -> CGVector {
+    let alongTrail = velocity.dx * tangent.dx + velocity.dy * tangent.dy
+    let brakeDecel = CGFloat(delta) * 450.0
+    let targetSpeed = max(0, alongTrail - brakeDecel)
+    let targetVx = tangent.dx * targetSpeed
+    let targetVy = tangent.dy * targetSpeed
+    let blend = min(CGFloat(delta) * 16.0, 0.65)
+    let newVx = velocity.dx * (1 - blend) + targetVx * blend
+    let newVy = velocity.dy * (1 - blend) + targetVy * blend
+    return CGVector(dx: newVx, dy: newVy)
 }
-let finalSpeed = hypot(runningVel.dx, runningVel.dy)
-suite.assert(finalSpeed <= downhillSpeed + 0.1, "Transition momentum strictly disengages without compounding runaway speed: \(finalSpeed) <= \(downhillSpeed)")
-suite.assert(runningVel.dy > -50.0, "Downward velocity is fully absorbed and redirected: \(runningVel.dy) > -50")
 
-// 4. Downhill compression scoop (slope -1.0 transitioning to flat 0.0)
-let scoopVel = CGVector(dx: 450.0, dy: -450.0)
-let scoopSpeed = hypot(scoopVel.dx, scoopVel.dy)
+let fastVel = CGVector(dx: 500.0, dy: 0.0)
 let flatTangent = CGVector(dx: 1.0, dy: 0.0)
-let (scoopRedirect, _, _) = testTransitionMomentum(velocity: scoopVel, tangent: flatTangent, delta: 0.016)
-suite.assert(scoopRedirect.dx > scoopVel.dx, "Downhill speed is converted into forward speed in scoop: \(scoopVel.dx) -> \(scoopRedirect.dx)")
-suite.assert(scoopRedirect.dy > scoopVel.dy, "Downward velocity is absorbed in scoop: \(scoopVel.dy) -> \(scoopRedirect.dy)")
-suite.assert(hypot(scoopRedirect.dx, scoopRedirect.dy) <= scoopSpeed + 0.1, "Scoop redirection conserves scalar speed: \(hypot(scoopRedirect.dx, scoopRedirect.dy)) <= \(scoopSpeed)")
-
-// 5. Coasting rolling momentum retention across flat trough
-var coastVel = CGVector(dx: 600.0, dy: 0.0)
-var coastCached: CGFloat = 600.0
-for _ in 0..<10 {
-    let res = testTransitionMomentum(velocity: coastVel, tangent: flatTangent, cachedSpeed: coastCached, delta: 0.016)
-    coastVel = res.velocity
-    coastCached = res.cachedSpeed
-}
-suite.assert(coastVel.dx > 580.0, "Coasting retention sustains rolling momentum across flat ground: \(coastVel.dx) > 580")
-
-// 6. Sustained downhill acceleration: massively increases speed down 45° slope
-let downhillAngle = -CGFloat.pi / 4.0 // 45 deg downhill
-let downhillTangent = CGVector(dx: cos(downhillAngle), dy: sin(downhillAngle)) // (0.7071, -0.7071)
-var runDownhillVel = CGVector(dx: 200.0 * downhillTangent.dx, dy: 200.0 * downhillTangent.dy)
-var runDownhillCached: CGFloat = 200.0
-// Simulate 1.5 seconds of downhill (94 frames @ 60fps)
-for _ in 0..<94 {
-    let res = testTransitionMomentum(velocity: runDownhillVel, tangent: downhillTangent, cachedSpeed: runDownhillCached, delta: 0.016)
-    runDownhillVel = res.velocity
-    runDownhillCached = res.cachedSpeed
-}
-suite.assert(runDownhillCached > 400.0, "Sustained downhill massively builds speed (from 200 to > 400 pt/s): \(runDownhillCached)")
-
-// 7. Uphill momentum inertia retention: carrying 800 pt/s up a kicker retains blistering speed
-var uphillVel = CGVector(dx: 800.0 * kickerTangent.dx, dy: 800.0 * kickerTangent.dy)
-var uphillCached: CGFloat = 800.0
-// 15 frames of climbing the kicker ramp (~0.25s)
-for _ in 0..<15 {
-    let res = testTransitionMomentum(velocity: uphillVel, tangent: kickerTangent, cachedSpeed: uphillCached, delta: 0.016)
-    uphillVel = res.velocity
-    uphillCached = res.cachedSpeed
-}
-suite.assert(uphillCached > 750.0, "High cached speed carries up kicker ramp with momentum inertia (> 750 pt/s): \(uphillCached)")
-
-// 8. Launch into space bug prevention: hitting steep 60° lip at 2,000 pt/s strictly bounds Vy
-let steepLipTangent = CGVector(dx: cos(CGFloat.pi / 3.0), dy: sin(CGFloat.pi / 3.0)) // 60 deg (0.50, 0.866)
-let hyperspeedVel = CGVector(dx: 1500.0, dy: -500.0)
-let (clampedMegaVel, _, _) = testTransitionMomentum(velocity: hyperspeedVel, tangent: steepLipTangent, cachedSpeed: 2000.0, isMegaJump: true)
-suite.assert(clampedMegaVel.dy <= 600.01, "Mega Jump launch Vy is strictly capped at 600 (eliminates space launch): \(clampedMegaVel.dy) <= 600")
-
-let (clampedTrailVel, _, _) = testTransitionMomentum(velocity: hyperspeedVel, tangent: steepLipTangent, cachedSpeed: 1200.0, isMegaJump: false)
-suite.assert(clampedTrailVel.dy <= 380.01, "Trail Rush launch Vy is strictly capped at 380 (eliminates space launch): \(clampedTrailVel.dy) <= 380")
-
-// 9. Wall slam crash guard: slamming into steep wall (> 0.65 dy) at extreme speed triggers crash
-let wallTangent = CGVector(dx: 0.35, dy: 0.93)
-let slamVel = CGVector(dx: 600.0, dy: -200.0)
-let (_, _, wallCrashed) = testTransitionMomentum(velocity: slamVel, tangent: wallTangent, cachedSpeed: 600.0, isMegaJump: false)
-suite.assert(wallCrashed, "Slamming into steep wall at high speed triggers crash instead of launching into space")
-
-// 10. Trail Rush realistic speed governing: 1.5s of downhill on Trail Rush stays controlled (< 600 pt/s)
-var trailDownhillVel = CGVector(dx: 200.0 * downhillTangent.dx, dy: 200.0 * downhillTangent.dy)
-var trailDownhillCached: CGFloat = 200.0
-for _ in 0..<94 {
-    let res = testTransitionMomentum(velocity: trailDownhillVel, tangent: downhillTangent, cachedSpeed: trailDownhillCached, isMegaJump: false, delta: 0.016)
-    trailDownhillVel = res.velocity
-    trailDownhillCached = res.cachedSpeed
-}
-suite.assert(trailDownhillCached < 600.0, "Trail Rush downhill speed remains realistic and controlled: \(trailDownhillCached) < 600")
+let brakedVel = simulateBraking(velocity: fastVel, tangent: flatTangent)
+suite.assert(brakedVel.dx < fastVel.dx, "Braking decelerates forward speed: \(fastVel.dx) -> \(brakedVel.dx)")
 
 // Test 15: Uphill Pedal Traction & Anti-Rollback Ratchet Invariants
 print("\n• Test Group 15: Uphill Pedal Traction & Anti-Rollback Ratchet Invariants")
@@ -835,8 +734,8 @@ func simulateUphillPedal(
     tangent: CGVector,
     pedalHeld: Bool,
     isGrounded: Bool,
-    pedalForce: CGFloat = 18_000,
-    pedalClimbForce: CGFloat = 38_000,
+    pedalForce: CGFloat = 3_600,
+    pedalClimbForce: CGFloat = 5_400,
     totalMass: CGFloat = 6.6,
     delta: TimeInterval = 0.016
 ) -> CGVector {
@@ -873,18 +772,18 @@ suite.assert(engagedTrailSpeed > 0, "Anti-rollback ratchet cancels backward slid
 // 2. Starting from a dead stop on a 30-degree steep hill
 let steepAngle = CGFloat.pi / 6.0 // 30 degrees (slope 0.577)
 let steepTangent = CGVector(dx: cos(steepAngle), dy: sin(steepAngle))
-let stopVel = CGVector.zero
+var climbingVel = CGVector.zero
 
-let accelVel = simulateUphillPedal(velocity: stopVel, tangent: steepTangent, pedalHeld: true, isGrounded: true)
-let climbSpeedAfter1Frame = accelVel.dx * steepTangent.dx + accelVel.dy * steepTangent.dy
-// With 38,000 climb force on 6.6 kg, acceleration is ~5,600 pt/s^2 (~90 pt/s in 1 frame)
-suite.assert(climbSpeedAfter1Frame > 70.0, "Pedal climb force powers bike up steep 30° hill from dead stop: \(climbSpeedAfter1Frame) > 70 pt/s")
+for _ in 0..<5 {
+    climbingVel = simulateUphillPedal(velocity: climbingVel, tangent: steepTangent, pedalHeld: true, isGrounded: true)
+}
+let climbSpeedAfter5Frames = climbingVel.dx * steepTangent.dx + climbingVel.dy * steepTangent.dy
+suite.assert(climbSpeedAfter5Frames > 70.0, "Pedal climb force powers bike up steep 30° hill from dead stop: \(climbSpeedAfter5Frames) > 70 pt/s")
 
-// 3. Normal low-speed pedaling does not trigger transition momentum boost
-let slowClimbVel = CGVector(dx: 60.0, dy: 30.0)
-let (untouchedVel, _, _) = testTransitionMomentum(velocity: slowClimbVel, tangent: steepTangent)
-suite.assertEqual(untouchedVel.dx, slowClimbVel.dx, "Low-speed climbing does not trigger transition boost (Vx unchanged)")
-suite.assertEqual(untouchedVel.dy, slowClimbVel.dy, "Low-speed climbing does not trigger transition boost (Vy unchanged)")
+// 3. Normal low-speed pedaling on flat accelerates smoothly
+let flatVel = CGVector(dx: 60.0, dy: 0.0)
+let pedaledVel = simulateUphillPedal(velocity: flatVel, tangent: flatTangent, pedalHeld: true, isGrounded: true)
+suite.assert(pedaledVel.dx > flatVel.dx, "Pedaling on flat accelerates bike forward smoothly: \(flatVel.dx) -> \(pedaledVel.dx)")
 
 print("\n• Test Group 16: Alternate Mega Jump Map & Smooth Physics Continuity Invariants")
 

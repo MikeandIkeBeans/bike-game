@@ -98,7 +98,7 @@ enum GameTuning {
         /// familiar Earth gravity into the scale used by the moving terrain.
         /// Gravity stays constant on ground and in the air; no launch-specific
         /// multiplier is ever applied.
-        static let worldUnitsPerPhysicsMeter: CGFloat = 6.0
+        static let worldUnitsPerPhysicsMeter: CGFloat = 22.4
         static let earthGravityMetersPerSecondSquared: CGFloat = 9.81
         static let gravity = CGVector(
             dx: 0,
@@ -135,7 +135,7 @@ enum GameTuning {
         static let frontWheelMass: CGFloat = 0.70
         static let componentLinearDamping: CGFloat = 0.002
         static let swingarmAngularDamping: CGFloat = 1.50
-        static let wheelAngularDamping: CGFloat = 0.25
+        static let wheelAngularDamping: CGFloat = 0.02
         /// Live suspension linkage geometry matching the classic hardtail silhouette.
         static let chassisPivotOffset = CGPoint(x: -5, y: -13)
         static let chassisShockMountOffset = CGPoint(x: -14, y: 3)
@@ -145,21 +145,21 @@ enum GameTuning {
         static let lowerTravelAngle: CGFloat = -0.02
         static let upperTravelAngle: CGFloat = 0.05
         static let pivotFrictionTorque: CGFloat = 1.50
-        static let springFrequency: CGFloat = 15.0
+        static let springFrequency: CGFloat = 26.0
         static let springDamping: CGFloat = 0.97
         static let topOutStrapExtraLength: CGFloat = 0.2
         /// Live telescoping front fork suspension masses, damping, and travel limits.
         static let frontForkMass: CGFloat = 0.50
         static let frontForkAngularDamping: CGFloat = 1.20
         static let frontForkAxis = CGVector(dx: -0.414, dy: 0.910)
-        static let frontSpringFrequency: CGFloat = 16.0
+        static let frontSpringFrequency: CGFloat = 28.0
         static let frontSpringDamping: CGFloat = 0.97
         static let frontLowerTravelLimit: CGFloat = -4.0
         static let frontUpperTravelLimit: CGFloat = 0.0
-        /// Visual-only wheels cannot spin their own bodies to overcome static
-        /// friction. Low friction lets the compound body slide smoothly while
-        /// the visual wheels roll from real travel.
-        static let tireFriction: CGFloat = 1.10
+        /// Low chassis and swingarm friction prevents abrasive drag when compressing in scoops.
+        /// High tire friction provides traction for wheel drive and climbing.
+        static let chassisFriction: CGFloat = 0.05
+        static let tireFriction: CGFloat = 0.85
         static let restitution: CGFloat = 0.08
         static let maximumSpeed: CGFloat = 4_000
         static let maximumChassisAngularVelocity: CGFloat = 4.0
@@ -570,19 +570,11 @@ enum GameTuning {
         /// Rider inputs add force or an equal-and-opposite torque couple to
         /// the vehicle; they never write velocity, change gravity, or lift
         /// the bike.
-        static let pedalForce: CGFloat = 18_000
-        static let pedalFadeSpeed: CGFloat = 3_000
-        static let pedalClimbForce: CGFloat = 38_000
+        static let pedalForce: CGFloat = 3_600
+        static let pedalFadeSpeed: CGFloat = 1_200
+        static let pedalClimbForce: CGFloat = 5_400
         static let groundLeanTorque: CGFloat = 48
         static let airLeanTorque: CGFloat = 28
-
-        /// Downhill gravity acceleration multiplier.
-        /// Massively increases the speed gained on sustained downhills (aerodynamic tuck gravity gain).
-        static let downhillGravityMultiplier: CGFloat = 6.0
-        /// Minimal rolling drag when coasting (0.5% decay per second).
-        static let coastingRollingDrag: CGFloat = 0.005
-        /// Momentum inertia factor that protects cached downhill speed on uphills.
-        static let uphillGravityReduction: CGFloat = 0.40
     }
 
     enum Crash {
