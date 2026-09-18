@@ -97,13 +97,36 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     private let speedLabel = SKLabelNode(fontNamed: "AvenirNext-DemiBold")
     private let surfaceLabel = SKLabelNode(fontNamed: "AvenirNext-DemiBold")
     private let toastLabel = SKLabelNode(fontNamed: "AvenirNext-Bold")
+    private let hudMapButton = SKShapeNode()
+    private let hudMapLabel = SKLabelNode(fontNamed: "AvenirNext-Bold")
+
     private let overlayCard = SKShapeNode()
     private let overlayTitle = SKLabelNode(fontNamed: "AvenirNext-Heavy")
     private let overlaySubtitle = SKLabelNode(fontNamed: "AvenirNext-DemiBold")
     private let overlayPrompt = SKLabelNode(fontNamed: "AvenirNext-Bold")
+    private let mapSelector = SKNode()
+    private let trailRushButton = SKShapeNode()
+    private let megaJumpButton = SKShapeNode()
+    private let trailRushTitle = SKLabelNode(fontNamed: "AvenirNext-Bold")
+    private let trailRushSubtitle = SKLabelNode(fontNamed: "AvenirNext-Medium")
+    private let megaJumpTitle = SKLabelNode(fontNamed: "AvenirNext-Bold")
+    private let megaJumpSubtitle = SKLabelNode(fontNamed: "AvenirNext-Medium")
+
     private let backControl = SKNode()
     private let pedalControl = SKNode()
     private let forwardControl = SKNode()
+
+    private(set) var mapMode: TerrainStreamController.GameMapMode = {
+        if let saved = UserDefaults.standard.string(forKey: "MountainBike.mapMode"),
+           let mode = TerrainStreamController.GameMapMode(rawValue: saved) {
+            return mode
+        }
+        return .trailRush
+    }()
+
+    private var bestDistanceKey: String {
+        mapMode == .megaJump ? "MegaJump.physicsBestDistance" : "TrailRush.physicsBestDistance"
+    }
 
     private var contacts = ContactBook()
     private var activeTouches: [ObjectIdentifier: CGPoint] = [:]
@@ -124,7 +147,8 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     private var airborneTime: TimeInterval = 0
     private var airborneStartX: CGFloat = 0
     private var spawnPitchLockRemaining: TimeInterval = 0
-    private var bestDistance = UserDefaults.standard.integer(forKey: "TrailRush.physicsBestDistance")
+    private var cachedGroundSpeed: CGFloat = 0
+    private lazy var bestDistance = UserDefaults.standard.integer(forKey: bestDistanceKey)
 
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
     private let heavyHaptic = UIImpactFeedbackGenerator(style: .heavy)
@@ -134,7 +158,8 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private var currentSpeed: Int {
-        Int(max(0, bike.velocity.dx) * GameTuning.Display.speedKilometersPerHourScale)
+        let speed = hypot(bike.velocity.dx, bike.velocity.dy)
+        return Int(speed * GameTuning.Display.speedKilometersPerHourScale)
     }
 
     private var distanceMeters: CGFloat {
@@ -232,17 +257,23 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         guard isConfigured else { return }
 
         if runState == .riding {
-            bike.recoverTerrainPenetration { [weak self] x in
-                guard let self = self else { return 0 }
-                return self.terrainStream.surfaceTerrainHeight(at: x) ?? self.terrainStream.terrainHeight(at: x)
-            }
+            bike.recoverTerrainPenetration(
+                terrainHeightAt: { [weak self] x in
+                    guard let self = self else { return 0 }
+                    return self.terrainStream.surfaceTerrainHeight(at: x) ?? self.terrainStream.terrainHeight(at: x)
+                },
+                terrainSlopeAt: { [weak self] x in
+                    guard let self = self else { return 0 }
+                    return self.terrainStream.surfaceTerrainSlope(at: x) ?? self.terrainStream.terrainSlope(at: x)
+                }
+            )
 
             // Catastrophic tunneling failsafe: if a frame hitch or solver glitch
-            // ever places the chassis >25 units beneath the terrain line,
+            // ever places the chassis >25 units beneath the terrain line while NOT grounded,
             // immediately rescue the bike back onto the trail with preserved momentum.
             let chassisX = bike.chassisPosition.x
             let terrainY = terrainStream.surfaceTerrainHeight(at: chassisX) ?? terrainStream.terrainHeight(at: chassisX)
-            if bike.chassisPosition.y < terrainY - 25 {
+            if !isGrounded && bike.chassisPosition.y < terrainY - 25 {
                 let attitude = terrainStream.supportAngle(at: chassisX)
                 let safeY = terrainY + bike.spawnClearance(for: attitude) + 2.0
                 let currentSpeed = max(bike.velocity.dx, 150)
@@ -340,39 +371,91 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     /// In real downhill mountain biking, a transition curve ("scoop" or "compression")
     /// redirects high downhill speed upward along the launch ramp rather than
     /// acting like an inelastic wall collision. This smoothly rotates the rider's
-    /// incoming velocity vector along the ramp tangent while strictly conserving (never boosting)
-    /// kinetic energy.
+    /// incoming velocity vector along the terrain tangent while strictly conserving
+    /// kinetic energy. Additionally, rolling momentum is sustained across flat or gentle
+    /// terrain against Box2D edge-chain micro-collisions so downhill speed carries into jumps.
     private func preserveTransitionMomentum() {
-        guard isGrounded, let tangent = pedalSupportTangent() else { return }
-        let currentSpeed = vectorLength(bike.velocity)
-        guard currentSpeed > 180, tangent.dy > 0.05, bike.velocity.dx > 100 else { return }
+        guard isGrounded, let tangent = pedalSupportTangent() else {
+            cachedGroundSpeed = 0
+            return
+        }
+        guard tangent.dx > 0.1, bike.velocity.dx > 50 else {
+            cachedGroundSpeed = 0
+            return
+        }
+
+        let alongTrail = bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy
+        let currentSpeed = hypot(bike.velocity.dx, bike.velocity.dy)
 
         // Outward normal vector from the terrain surface
         let normal = CGVector(dx: -tangent.dy, dy: tangent.dx)
         let normalVelocity = bike.velocity.dx * normal.dx + bike.velocity.dy * normal.dy
 
-        // ONLY redirect when the vehicle is actively colliding into the ramp face (normalVelocity < -15).
-        // Once the velocity is redirected along or away from the ramp (normalVelocity >= 0),
-        // the bike is launching freely and this MUST NOT run or compound.
-        guard normalVelocity < -15 else { return }
+        // Keep cached forward momentum synchronized with physics acceleration
+        cachedGroundSpeed = max(cachedGroundSpeed, max(alongTrail, currentSpeed))
 
-        // Guide velocity smoothly toward the ramp tangent at existing scalar speed
-        let targetVelocity = CGVector(dx: tangent.dx * currentSpeed, dy: tangent.dy * currentSpeed)
-        let blend: CGFloat = min(CGFloat(frameDelta) * 16.0, 0.45)
-        var newVx = bike.velocity.dx * (1 - blend) + targetVelocity.dx * blend
-        var newVy = bike.velocity.dy * (1 - blend) + targetVelocity.dy * blend
+        if normalVelocity < -8 {
+            // Actively compressing into the terrain (bottom scoop, trough transition, or kicker ramp face).
+            // Smoothly redirect incoming momentum along the forward terrain tangent at full scalar speed.
+            let redirectSpeed = max(cachedGroundSpeed, currentSpeed)
+            let targetVelocity = CGVector(dx: tangent.dx * redirectSpeed, dy: tangent.dy * redirectSpeed)
+            let blend: CGFloat = min(CGFloat(frameDelta) * 35.0, 0.90)
+            var newVx = bike.velocity.dx * (1 - blend) + targetVelocity.dx * blend
+            var newVy = bike.velocity.dy * (1 - blend) + targetVelocity.dy * blend
 
-        // Never allow the speed to exceed the incoming speed
-        let newSpeed = hypot(newVx, newVy)
-        if newSpeed > currentSpeed && newSpeed > 0 {
-            let scale = currentSpeed / newSpeed
-            newVx *= scale
-            newVy *= scale
-        }
+            // Strictly conserve kinetic energy: never exceed incoming speed
+            let newSpeed = hypot(newVx, newVy)
+            if newSpeed > redirectSpeed && newSpeed > 0 {
+                let scale = redirectSpeed / newSpeed
+                newVx *= scale
+                newVy *= scale
+            }
 
-        let newVelocity = CGVector(dx: newVx, dy: newVy)
-        for body in bike.allBodies {
-            body.velocity = newVelocity
+            let newVelocity = CGVector(dx: newVx, dy: newVy)
+            for body in bike.allBodies {
+                body.velocity = newVelocity
+            }
+            cachedGroundSpeed = hypot(newVx, newVy)
+        } else {
+            // Rolling / coasting along the terrain:
+            // 1. Gravity acceleration along the slope:
+            // deltaV = (g · T) * dt = g.dy * tangent.dy * dt
+            let baseGravityAlongTrail = GameTuning.Simulation.gravity.dy * tangent.dy
+
+            if tangent.dy < -0.05 {
+                // Sustained downhill: rapidly increase speed gain from gravity
+                let slopeRatio = min(1.0, -tangent.dy / 0.7071)
+                let multiplier = 1.0 + slopeRatio * (GameTuning.Handling.downhillGravityMultiplier - 1.0)
+                // Aerodynamic tuck momentum compounding: acceleration builds rapidly as downhill speed builds
+                let compoundingBonus = 1.0 + min(1.5, cachedGroundSpeed / 500.0)
+                let amplifiedGravity = baseGravityAlongTrail * multiplier * compoundingBonus
+                cachedGroundSpeed += amplifiedGravity * CGFloat(frameDelta)
+            } else if tangent.dy > 0.05 && cachedGroundSpeed > 180 {
+                // Uphill with high cached downhill speed: forward momentum inertia carries through
+                let reducedGravity = baseGravityAlongTrail * GameTuning.Handling.uphillGravityReduction
+                cachedGroundSpeed += reducedGravity * CGFloat(frameDelta)
+            } else {
+                // Flat or gentle slope
+                cachedGroundSpeed += baseGravityAlongTrail * CGFloat(frameDelta)
+            }
+
+            // 2. Minimal rolling drag (make it very hard to lose speed once cached)
+            cachedGroundSpeed *= max(0, 1.0 - GameTuning.Handling.coastingRollingDrag * CGFloat(frameDelta))
+
+            // 3. Sustain bike's physical momentum against Box2D edge-chain micro-collisions
+            if alongTrail < cachedGroundSpeed && cachedGroundSpeed > 60 {
+                let targetVx = tangent.dx * cachedGroundSpeed
+                let targetVy = tangent.dy * cachedGroundSpeed
+                let sustainBlend: CGFloat = min(CGFloat(frameDelta) * 20.0, 0.75)
+                let newVx = bike.velocity.dx * (1 - sustainBlend) + targetVx * sustainBlend
+                let newVy = bike.velocity.dy * (1 - sustainBlend) + targetVy * sustainBlend
+                let newVelocity = CGVector(dx: newVx, dy: newVy)
+                for body in bike.allBodies {
+                    body.velocity = newVelocity
+                }
+            } else {
+                cachedGroundSpeed = max(cachedGroundSpeed, alongTrail)
+            }
         }
     }
 
@@ -454,7 +537,15 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
                 emitLandingDust(at: frontContact)
                 let airDistance = max(0, Int((bike.chassisPosition.x - airborneStartX) / GameTuning.Display.worldUnitsPerMeter))
                 if airborneTime >= 0.75 || airDistance >= 20 {
-                    toast(airDistance >= 30 ? "HUGE AIR \(airDistance)m" : "BIG AIR \(airDistance)m")
+                    let airToast: String
+                    if airDistance >= 60 {
+                        airToast = "MEGA AIR \(airDistance)m"
+                    } else if airDistance >= 30 {
+                        airToast = "HUGE AIR \(airDistance)m"
+                    } else {
+                        airToast = "BIG AIR \(airDistance)m"
+                    }
+                    toast(airToast)
                 }
             }
             airborneTime = 0
@@ -534,9 +625,12 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         roostTimer = 0
         effectsLayer.removeAllChildren()
         spawnPitchLockRemaining = 0
+        cachedGroundSpeed = 0
         pendingCrash = nil
         runState = .intro
 
+        terrainStream.mapMode = mapMode
+        bestDistance = UserDefaults.standard.integer(forKey: bestDistanceKey)
         terrainStream.reset()
         bike.resetAppearance()
         bike.prepareForSpawn()
@@ -598,11 +692,12 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         keyboardPedalHeld = false
         airborneTime = 0
         airborneStartX = 0
+        cachedGroundSpeed = 0
         bike.freezePhysics()
         bike.crash()
         emitCrashDust(at: bike.chassisPosition)
         bestDistance = max(bestDistance, currentDistance)
-        UserDefaults.standard.set(bestDistance, forKey: "TrailRush.physicsBestDistance")
+        UserDefaults.standard.set(bestDistance, forKey: bestDistanceKey)
         heavyHaptic.impactOccurred()
         heavyHaptic.prepare()
 
@@ -636,6 +731,24 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     // MARK: - Touch and Keyboard input
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        for touch in touches {
+            if !overlay.isHidden {
+                let posInSelector = touch.location(in: mapSelector)
+                if trailRushButton.contains(posInSelector) {
+                    selectMapMode(.trailRush)
+                    return
+                } else if megaJumpButton.contains(posInSelector) {
+                    selectMapMode(.megaJump)
+                    return
+                }
+            }
+            let posInHud = touch.location(in: hudLayer)
+            if hudMapButton.contains(posInHud) {
+                toggleMapMode()
+                return
+            }
+        }
+
         if runState != .riding {
             startRun()
         }
@@ -684,6 +797,9 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
                 resetRun(showIntro: false)
                 startRun()
                 handled = true
+            case "m":
+                toggleMapMode()
+                return
             default:
                 break
             }
@@ -696,6 +812,24 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         } else {
             super.pressesBegan(presses, with: event)
         }
+    }
+
+    private func selectMapMode(_ mode: TerrainStreamController.GameMapMode) {
+        guard mapMode != mode else { return }
+        mapMode = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: "MountainBike.mapMode")
+        terrainStream.mapMode = mode
+        bestDistance = UserDefaults.standard.integer(forKey: bestDistanceKey)
+        updateMapSelectorVisuals()
+        lightHaptic.impactOccurred()
+        lightHaptic.prepare()
+        resetRun(showIntro: true)
+        toast("MAP: \(mode.rawValue)")
+    }
+
+    private func toggleMapMode() {
+        let nextMode: TerrainStreamController.GameMapMode = (mapMode == .trailRush) ? .megaJump : .trailRush
+        selectMapMode(nextMode)
     }
 
     override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
@@ -875,6 +1009,23 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         toastLabel.horizontalAlignmentMode = .center
         toastLabel.alpha = 0
 
+        hudMapButton.path = CGPath(
+            roundedRect: CGRect(x: -58, y: -11, width: 116, height: 22),
+            cornerWidth: 11,
+            cornerHeight: 11,
+            transform: nil
+        )
+        hudMapButton.fillColor = SKColor(red: 0.05, green: 0.12, blue: 0.18, alpha: 0.70)
+        hudMapButton.strokeColor = SKColor(white: 1, alpha: 0.35)
+        hudMapButton.lineWidth = 1
+        hudMapLabel.fontSize = 10
+        hudMapLabel.fontColor = SKColor(white: 1, alpha: 0.90)
+        hudMapLabel.horizontalAlignmentMode = .center
+        hudMapLabel.verticalAlignmentMode = .center
+        hudMapLabel.text = "MAP: \(mapMode.rawValue)"
+        hudMapButton.addChild(hudMapLabel)
+        hudLayer.addChild(hudMapButton)
+
         configureOverlay()
         configureControl(backControl, title: "LEAN", subtitle: "BACK")
         configureControl(pedalControl, title: "PEDAL", subtitle: "DRIVE")
@@ -886,23 +1037,76 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func configureOverlay() {
-        overlayCard.fillColor = SKColor(red: 0.03, green: 0.08, blue: 0.14, alpha: 0.72)
-        overlayCard.strokeColor = SKColor(white: 1, alpha: 0.22)
+        overlayCard.fillColor = SKColor(red: 0.03, green: 0.08, blue: 0.14, alpha: 0.82)
+        overlayCard.strokeColor = SKColor(white: 1, alpha: 0.28)
         overlayCard.lineWidth = 1
         overlay.addChild(overlayCard)
-        overlayTitle.fontSize = 32
+        overlayTitle.fontSize = 30
         overlayTitle.fontColor = .white
         overlayTitle.horizontalAlignmentMode = .center
         overlayTitle.verticalAlignmentMode = .center
-        overlaySubtitle.fontSize = 12
+        overlaySubtitle.fontSize = 11
         overlaySubtitle.fontColor = SKColor(red: 0.65, green: 0.94, blue: 0.86, alpha: 1)
         overlaySubtitle.horizontalAlignmentMode = .center
         overlaySubtitle.verticalAlignmentMode = .center
-        overlayPrompt.fontSize = 15
+        overlayPrompt.fontSize = 13
         overlayPrompt.fontColor = SKColor(red: 1, green: 0.86, blue: 0.32, alpha: 1)
         overlayPrompt.horizontalAlignmentMode = .center
         overlayPrompt.verticalAlignmentMode = .center
         [overlayTitle, overlaySubtitle, overlayPrompt].forEach(overlay.addChild)
+
+        configureMapButton(trailRushButton, titleLabel: trailRushTitle, subtitleLabel: trailRushSubtitle, title: "TRAIL RUSH", subtitle: "ENDLESS DOWNHILL")
+        configureMapButton(megaJumpButton, titleLabel: megaJumpTitle, subtitleLabel: megaJumpSubtitle, title: "MEGA JUMP", subtitle: "MASSIVE AIR RAMP")
+        mapSelector.addChild(trailRushButton)
+        mapSelector.addChild(megaJumpButton)
+        overlay.addChild(mapSelector)
+        updateMapSelectorVisuals()
+    }
+
+    private func configureMapButton(_ button: SKShapeNode, titleLabel: SKLabelNode, subtitleLabel: SKLabelNode, title: String, subtitle: String) {
+        let btnWidth: CGFloat = 136
+        let btnHeight: CGFloat = 38
+        button.path = CGPath(
+            roundedRect: CGRect(x: -btnWidth / 2, y: -btnHeight / 2, width: btnWidth, height: btnHeight),
+            cornerWidth: 10,
+            cornerHeight: 10,
+            transform: nil
+        )
+        button.lineWidth = 1.5
+
+        titleLabel.text = title
+        titleLabel.fontSize = 11
+        titleLabel.horizontalAlignmentMode = .center
+        titleLabel.verticalAlignmentMode = .center
+        titleLabel.position = CGPoint(x: 0, y: 5)
+        button.addChild(titleLabel)
+
+        subtitleLabel.text = subtitle
+        subtitleLabel.fontSize = 8
+        subtitleLabel.horizontalAlignmentMode = .center
+        subtitleLabel.verticalAlignmentMode = .center
+        subtitleLabel.position = CGPoint(x: 0, y: -8)
+        button.addChild(subtitleLabel)
+    }
+
+    private func updateMapSelectorVisuals() {
+        let activeBg = SKColor(red: 0.16, green: 0.44, blue: 0.72, alpha: 0.90)
+        let activeStroke = SKColor(red: 0.55, green: 0.85, blue: 1.0, alpha: 1.0)
+        let inactiveBg = SKColor(red: 0.06, green: 0.12, blue: 0.18, alpha: 0.65)
+        let inactiveStroke = SKColor(white: 1, alpha: 0.25)
+
+        let isTrail = (mapMode == .trailRush)
+        trailRushButton.fillColor = isTrail ? activeBg : inactiveBg
+        trailRushButton.strokeColor = isTrail ? activeStroke : inactiveStroke
+        trailRushTitle.fontColor = isTrail ? .white : SKColor(white: 1, alpha: 0.65)
+        trailRushSubtitle.fontColor = isTrail ? SKColor(red: 0.70, green: 0.92, blue: 1.0, alpha: 1.0) : SKColor(white: 1, alpha: 0.45)
+
+        megaJumpButton.fillColor = !isTrail ? activeBg : inactiveBg
+        megaJumpButton.strokeColor = !isTrail ? activeStroke : inactiveStroke
+        megaJumpTitle.fontColor = !isTrail ? .white : SKColor(white: 1, alpha: 0.65)
+        megaJumpSubtitle.fontColor = !isTrail ? SKColor(red: 0.70, green: 0.92, blue: 1.0, alpha: 1.0) : SKColor(white: 1, alpha: 0.45)
+
+        hudMapLabel.text = "MAP: \(mapMode.rawValue)"
     }
 
     private func configureControl(_ control: SKNode, title: String, subtitle: String) {
@@ -934,22 +1138,27 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         let halfHeight = size.height / 2
         distanceLabel.position = CGPoint(x: -halfWidth + 22, y: halfHeight - 28)
         speedLabel.position = CGPoint(x: halfWidth - 22, y: halfHeight - 28)
-        surfaceLabel.position = CGPoint(x: 0, y: halfHeight - 28)
+        surfaceLabel.position = CGPoint(x: 0, y: halfHeight - 24)
+        hudMapButton.position = CGPoint(x: 0, y: halfHeight - 50)
         toastLabel.position = CGPoint(x: 0, y: halfHeight * 0.24)
         backControl.position = CGPoint(x: -halfWidth + 66, y: -halfHeight + 58)
         pedalControl.position = CGPoint(x: 0, y: -halfHeight + 58)
         forwardControl.position = CGPoint(x: halfWidth - 66, y: -halfHeight + 58)
 
-        let cardWidth = min(size.width - 52, 520)
+        let cardWidth = min(size.width - 44, 460)
+        let cardHeight: CGFloat = 194
         overlayCard.path = CGPath(
-            roundedRect: CGRect(x: -cardWidth / 2, y: -71, width: cardWidth, height: 142),
+            roundedRect: CGRect(x: -cardWidth / 2, y: -cardHeight / 2, width: cardWidth, height: cardHeight),
             cornerWidth: 20,
             cornerHeight: 20,
             transform: nil
         )
-        overlayTitle.position = CGPoint(x: 0, y: 27)
-        overlaySubtitle.position = CGPoint(x: 0, y: -2)
-        overlayPrompt.position = CGPoint(x: 0, y: -42)
+        overlayTitle.position = CGPoint(x: 0, y: 56)
+        overlaySubtitle.position = CGPoint(x: 0, y: 30)
+        mapSelector.position = CGPoint(x: 0, y: -9)
+        trailRushButton.position = CGPoint(x: -74, y: 0)
+        megaJumpButton.position = CGPoint(x: 74, y: 0)
+        overlayPrompt.position = CGPoint(x: 0, y: -64)
     }
 
     // MARK: - Presentation
@@ -997,9 +1206,12 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     private func showIntroOverlay() {
         overlay.isHidden = false
         overlay.alpha = 1
-        overlayTitle.text = "TRAIL RUSH"
-        overlaySubtitle.text = "COMPOUND BIKE PHYSICS"
+        overlayTitle.text = mapMode.rawValue
+        overlaySubtitle.text = mapMode == .megaJump
+            ? "ONE BIG DOWNHILL LEADUP & HUGE AIR JUMP"
+            : "COMPOUND BIKE PHYSICS • PROCEDURAL TRAIL"
         overlayPrompt.text = "HOLD PEDAL TO RIDE  •  LEAN LEFT / RIGHT"
+        updateMapSelectorVisuals()
     }
 
     private func showCrashOverlay(reason: CrashReason) {
@@ -1008,6 +1220,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         overlayTitle.text = "WIPEOUT"
         overlaySubtitle.text = "\(reason.rawValue)  •  \(currentDistance)m  •  BEST \(bestDistance)m"
         overlayPrompt.text = "TAP TO RIDE AGAIN"
+        updateMapSelectorVisuals()
         overlay.run(.fadeIn(withDuration: 0.18))
     }
 

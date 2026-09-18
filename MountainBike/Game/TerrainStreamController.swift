@@ -283,6 +283,13 @@ final class TerrainStreamController {
     private var nextTerrainChunkIndex = 0
     private(set) var terrainBodyIDs = Set<ObjectIdentifier>()
 
+    enum GameMapMode: String, CaseIterable {
+        case trailRush = "TRAIL RUSH"
+        case megaJump = "MEGA JUMP"
+    }
+
+    var mapMode: GameMapMode = .trailRush
+
     var levelStartX: CGFloat { terrainPoints.first?.x ?? 0 }
     var levelEndX: CGFloat { terrainPoints.last?.x ?? 0 }
 
@@ -303,8 +310,9 @@ final class TerrainStreamController {
         terrainSeed = GameTuning.Terrain.proceduralCourseSeed &+ (
             terrainRunIndex &* 0xA24B_AED4_963E_E407
         )
+        let startY = (mapMode == .megaJump) ? 1200.0 : GameTuning.Terrain.streamStartY
         terrainCursor = TerrainCursor(
-            point: CGPoint(x: GameTuning.Terrain.streamStartX, y: GameTuning.Terrain.streamStartY),
+            point: CGPoint(x: GameTuning.Terrain.streamStartX, y: startY),
             slope: 0,
             nextFeatureIndex: 0,
             nonJumpFeatureCount: 0,
@@ -452,10 +460,153 @@ final class TerrainStreamController {
         return (chunk, generated.cursor)
     }
 
+    private func megaJumpSegments(
+        forChunk chunkIndex: Int,
+        from startingCursor: TerrainCursor
+    ) -> (segments: [TerrainSegment], cursor: TerrainCursor) {
+        let cycle = chunkIndex / 5
+        let phase = chunkIndex % 5
+        let ox = CGFloat(cycle) * 11590.0
+        let oy = CGFloat(cycle) * -6200.0
+
+        let segments: [TerrainSegment]
+        switch phase {
+        case 0:
+            // Flat roll-in and steep 45° drop-in chute (dropping 1,620 units)
+            segments = [
+                TerrainSegment(
+                    start: CGPoint(x: -480 + ox, y: 1200 + oy),
+                    end: CGPoint(x: 20 + ox, y: 1200 + oy),
+                    startSlope: 0,
+                    endSlope: 0,
+                    isLinear: false
+                ),
+                TerrainSegment(
+                    start: CGPoint(x: 20 + ox, y: 1200 + oy),
+                    end: CGPoint(x: 260 + ox, y: 1080 + oy),
+                    startSlope: 0,
+                    endSlope: -1.0,
+                    isLinear: false
+                ),
+                TerrainSegment(
+                    start: CGPoint(x: 260 + ox, y: 1080 + oy),
+                    end: CGPoint(x: 1760 + ox, y: -420 + oy),
+                    startSlope: -1.0,
+                    endSlope: -1.0,
+                    isLinear: false
+                )
+            ]
+        case 1:
+            // Continued steep 45° chute (3,000 units total downhill drop), smooth scoop, and short snappy kicker
+            segments = [
+                TerrainSegment(
+                    start: CGPoint(x: 1760 + ox, y: -420 + oy),
+                    end: CGPoint(x: 3260 + ox, y: -1920 + oy),
+                    startSlope: -1.0,
+                    endSlope: -1.0,
+                    isLinear: false
+                ),
+                TerrainSegment(
+                    start: CGPoint(x: 3260 + ox, y: -1920 + oy),
+                    end: CGPoint(x: 3660 + ox, y: -2080 + oy),
+                    startSlope: -1.0,
+                    endSlope: 0.0,
+                    isLinear: false,
+                    maximumUphillSlope: 1.2
+                ),
+                TerrainSegment(
+                    start: CGPoint(x: 3660 + ox, y: -2080 + oy),
+                    end: CGPoint(x: 3860 + ox, y: -2030 + oy),
+                    startSlope: 0.0,
+                    endSlope: 0.48,
+                    isLinear: false,
+                    maximumUphillSlope: 1.2
+                ),
+                TerrainSegment(
+                    start: CGPoint(x: 3860 + ox, y: -2030 + oy),
+                    end: CGPoint(x: 3990 + ox, y: -1968 + oy),
+                    startSlope: 0.48,
+                    endSlope: 0.48,
+                    isLinear: false,
+                    maximumUphillSlope: 1.2
+                ),
+                TerrainSegment(
+                    start: CGPoint(x: 3990 + ox, y: -1968 + oy),
+                    end: CGPoint(x: 4110 + ox, y: -1975 + oy),
+                    startSlope: 0.48,
+                    endSlope: -0.55,
+                    isLinear: false,
+                    maximumUphillSlope: 1.2
+                )
+            ]
+        case 2:
+            // Upper expansive downhill landing catch zone
+            segments = [
+                TerrainSegment(
+                    start: CGPoint(x: 4110 + ox, y: -1975 + oy),
+                    end: CGPoint(x: 6610 + ox, y: -3350 + oy),
+                    startSlope: -0.55,
+                    endSlope: -0.55,
+                    isLinear: false
+                )
+            ]
+        case 3:
+            // Lower expansive downhill landing catch zone
+            segments = [
+                TerrainSegment(
+                    start: CGPoint(x: 6610 + ox, y: -3350 + oy),
+                    end: CGPoint(x: 9110 + ox, y: -4725 + oy),
+                    startSlope: -0.55,
+                    endSlope: -0.55,
+                    isLinear: false
+                )
+            ]
+        case 4:
+            // Smooth deceleration runout scoop and flat roll-in connecting to the next cycle
+            segments = [
+                TerrainSegment(
+                    start: CGPoint(x: 9110 + ox, y: -4725 + oy),
+                    end: CGPoint(x: 10110 + ox, y: -5000 + oy),
+                    startSlope: -0.55,
+                    endSlope: 0.0,
+                    isLinear: false,
+                    maximumUphillSlope: 1.2
+                ),
+                TerrainSegment(
+                    start: CGPoint(x: 10110 + ox, y: -5000 + oy),
+                    end: CGPoint(x: 11110 + ox, y: -5000 + oy),
+                    startSlope: 0.0,
+                    endSlope: 0.0,
+                    isLinear: false,
+                    maximumUphillSlope: 1.2
+                )
+            ]
+        default:
+            segments = []
+        }
+
+        let last = segments.last!
+        let nextCursor = TerrainCursor(
+            point: last.end,
+            slope: last.endSlope,
+            nextFeatureIndex: startingCursor.nextFeatureIndex + 1,
+            nonJumpFeatureCount: 0,
+            hasGeneratedJump: false,
+            previousFeatureKind: nil,
+            activeGrammar: .summitSpine,
+            grammarFeatureCount: 0
+        )
+        return (segments, nextCursor)
+    }
+
     private func terrainSegments(
         forChunk chunkIndex: Int,
         from startingCursor: TerrainCursor
     ) -> (segments: [TerrainSegment], cursor: TerrainCursor) {
+        if mapMode == .megaJump {
+            return megaJumpSegments(forChunk: chunkIndex, from: startingCursor)
+        }
+
         if chunkIndex == 0 {
             let start = startingCursor.point
             let firstFlatEnd = CGPoint(

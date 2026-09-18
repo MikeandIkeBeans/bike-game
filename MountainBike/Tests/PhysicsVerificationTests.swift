@@ -643,27 +643,65 @@ suite.assertEqual(pr5.chassisVy, 0.0, "Rescued vertical velocity zeroed")
 
 // Test 14: Transition Momentum & Kicker Launch Invariants
 print("\n• Test Group 14: Transition Momentum & Kicker Launch Invariants")
-func testTransitionMomentum(velocity: CGVector, tangent: CGVector, delta: TimeInterval = 0.016) -> CGVector {
+func testTransitionMomentum(
+    velocity: CGVector,
+    tangent: CGVector,
+    cachedSpeed: CGFloat = 0,
+    delta: TimeInterval = 0.016
+) -> (velocity: CGVector, cachedSpeed: CGFloat) {
     let currentSpeed = hypot(velocity.dx, velocity.dy)
-    guard currentSpeed > 180, tangent.dy > 0.05, velocity.dx > 100 else { return velocity }
+    guard tangent.dx > 0.1, velocity.dx > 50 else { return (velocity, 0) }
 
+    let alongTrail = velocity.dx * tangent.dx + velocity.dy * tangent.dy
     let normal = CGVector(dx: -tangent.dy, dy: tangent.dx)
     let normalVelocity = velocity.dx * normal.dx + velocity.dy * normal.dy
-    guard normalVelocity < -15 else { return velocity }
+    var groundSpeed = max(cachedSpeed, max(alongTrail, currentSpeed))
 
-    let targetVelocity = CGVector(dx: tangent.dx * currentSpeed, dy: tangent.dy * currentSpeed)
-    let blend = min(CGFloat(delta) * 16.0, 0.45)
-    var newVx = velocity.dx * (1 - blend) + targetVelocity.dx * blend
-    var newVy = velocity.dy * (1 - blend) + targetVelocity.dy * blend
+    if normalVelocity < -8 {
+        let redirectSpeed = max(groundSpeed, currentSpeed)
+        let targetVelocity = CGVector(dx: tangent.dx * redirectSpeed, dy: tangent.dy * redirectSpeed)
+        let blend = min(CGFloat(delta) * 35.0, 0.90)
+        var newVx = velocity.dx * (1 - blend) + targetVelocity.dx * blend
+        var newVy = velocity.dy * (1 - blend) + targetVelocity.dy * blend
 
-    let newSpeed = hypot(newVx, newVy)
-    if newSpeed > currentSpeed && newSpeed > 0 {
-        let scale = currentSpeed / newSpeed
-        newVx *= scale
-        newVy *= scale
+        let newSpeed = hypot(newVx, newVy)
+        if newSpeed > redirectSpeed && newSpeed > 0 {
+            let scale = redirectSpeed / newSpeed
+            newVx *= scale
+            newVy *= scale
+        }
+        let finalSpeed = hypot(newVx, newVy)
+        return (CGVector(dx: newVx, dy: newVy), finalSpeed)
+    } else {
+        let baseGravityAlongTrail = (-58.86) * tangent.dy
+
+        if tangent.dy < -0.05 {
+            let slopeRatio = min(1.0, -tangent.dy / 0.7071)
+            let multiplier = 1.0 + slopeRatio * (6.0 - 1.0)
+            let compoundingBonus = 1.0 + min(1.5, groundSpeed / 500.0)
+            let amplifiedGravity = baseGravityAlongTrail * multiplier * compoundingBonus
+            groundSpeed += amplifiedGravity * CGFloat(delta)
+        } else if tangent.dy > 0.05 && groundSpeed > 180 {
+            let reducedGravity = baseGravityAlongTrail * 0.40
+            groundSpeed += reducedGravity * CGFloat(delta)
+        } else {
+            groundSpeed += baseGravityAlongTrail * CGFloat(delta)
+        }
+
+        let rollingDrag: CGFloat = 0.005
+        groundSpeed *= max(0, 1.0 - rollingDrag * CGFloat(delta))
+
+        if alongTrail < groundSpeed && groundSpeed > 60 {
+            let targetVx = tangent.dx * groundSpeed
+            let targetVy = tangent.dy * groundSpeed
+            let sustainBlend = min(CGFloat(delta) * 20.0, 0.75)
+            let newVx = velocity.dx * (1 - sustainBlend) + targetVx * sustainBlend
+            let newVy = velocity.dy * (1 - sustainBlend) + targetVy * sustainBlend
+            return (CGVector(dx: newVx, dy: newVy), groundSpeed)
+        } else {
+            return (velocity, max(groundSpeed, alongTrail))
+        }
     }
-
-    return CGVector(dx: newVx, dy: newVy)
 }
 
 // 1. Mountain bike tire friction on dirt trail
@@ -680,7 +718,7 @@ let downhillSpeed = hypot(downhillVel.dx, downhillVel.dy) // ~492.4
 let kickerAngle = CGFloat.pi / 6.0
 let kickerTangent = CGVector(dx: cos(kickerAngle), dy: sin(kickerAngle)) // (0.866, 0.500)
 
-let redirectedVel = testTransitionMomentum(velocity: downhillVel, tangent: kickerTangent, delta: 0.016)
+let (redirectedVel, _) = testTransitionMomentum(velocity: downhillVel, tangent: kickerTangent, delta: 0.016)
 let redirectedSpeed = hypot(redirectedVel.dx, redirectedVel.dy)
 
 suite.assert(redirectedVel.dy > downhillVel.dy, "Vertical velocity is converted upward: \(downhillVel.dy) -> \(redirectedVel.dy)")
@@ -689,12 +727,58 @@ suite.assert(redirectedVel.dx > 400.0, "Horizontal forward speed remains high (>
 
 // 3. Repeated frames through the transition ramp disengage once aligned (no runaway compounding)
 var runningVel = downhillVel
+var runningCached: CGFloat = 0
 for _ in 0..<15 {
-    runningVel = testTransitionMomentum(velocity: runningVel, tangent: kickerTangent, delta: 0.016)
+    let res = testTransitionMomentum(velocity: runningVel, tangent: kickerTangent, cachedSpeed: runningCached, delta: 0.016)
+    runningVel = res.velocity
+    runningCached = res.cachedSpeed
 }
 let finalSpeed = hypot(runningVel.dx, runningVel.dy)
 suite.assert(finalSpeed <= downhillSpeed + 0.1, "Transition momentum strictly disengages without compounding runaway speed: \(finalSpeed) <= \(downhillSpeed)")
 suite.assert(runningVel.dy > -50.0, "Downward velocity is fully absorbed and redirected: \(runningVel.dy) > -50")
+
+// 4. Downhill compression scoop (slope -1.0 transitioning to flat 0.0)
+let scoopVel = CGVector(dx: 450.0, dy: -450.0)
+let scoopSpeed = hypot(scoopVel.dx, scoopVel.dy)
+let flatTangent = CGVector(dx: 1.0, dy: 0.0)
+let (scoopRedirect, _) = testTransitionMomentum(velocity: scoopVel, tangent: flatTangent, delta: 0.016)
+suite.assert(scoopRedirect.dx > scoopVel.dx, "Downhill speed is converted into forward speed in scoop: \(scoopVel.dx) -> \(scoopRedirect.dx)")
+suite.assert(scoopRedirect.dy > scoopVel.dy, "Downward velocity is absorbed in scoop: \(scoopVel.dy) -> \(scoopRedirect.dy)")
+suite.assert(hypot(scoopRedirect.dx, scoopRedirect.dy) <= scoopSpeed + 0.1, "Scoop redirection conserves scalar speed: \(hypot(scoopRedirect.dx, scoopRedirect.dy)) <= \(scoopSpeed)")
+
+// 5. Coasting rolling momentum retention across flat trough
+var coastVel = CGVector(dx: 600.0, dy: 0.0)
+var coastCached: CGFloat = 600.0
+for _ in 0..<10 {
+    let res = testTransitionMomentum(velocity: coastVel, tangent: flatTangent, cachedSpeed: coastCached, delta: 0.016)
+    coastVel = res.velocity
+    coastCached = res.cachedSpeed
+}
+suite.assert(coastVel.dx > 580.0, "Coasting retention sustains rolling momentum across flat ground: \(coastVel.dx) > 580")
+
+// 6. Sustained downhill acceleration: massively increases speed down 45° slope
+let downhillAngle = -CGFloat.pi / 4.0 // 45 deg downhill
+let downhillTangent = CGVector(dx: cos(downhillAngle), dy: sin(downhillAngle)) // (0.7071, -0.7071)
+var runDownhillVel = CGVector(dx: 200.0 * downhillTangent.dx, dy: 200.0 * downhillTangent.dy)
+var runDownhillCached: CGFloat = 200.0
+// Simulate 1.5 seconds of downhill (94 frames @ 60fps)
+for _ in 0..<94 {
+    let res = testTransitionMomentum(velocity: runDownhillVel, tangent: downhillTangent, cachedSpeed: runDownhillCached, delta: 0.016)
+    runDownhillVel = res.velocity
+    runDownhillCached = res.cachedSpeed
+}
+suite.assert(runDownhillCached > 400.0, "Sustained downhill massively builds speed (from 200 to > 400 pt/s): \(runDownhillCached)")
+
+// 7. Uphill momentum inertia retention: carrying 800 pt/s up a kicker retains blistering speed
+var uphillVel = CGVector(dx: 800.0 * kickerTangent.dx, dy: 800.0 * kickerTangent.dy)
+var uphillCached: CGFloat = 800.0
+// 15 frames of climbing the kicker ramp (~0.25s)
+for _ in 0..<15 {
+    let res = testTransitionMomentum(velocity: uphillVel, tangent: kickerTangent, cachedSpeed: uphillCached, delta: 0.016)
+    uphillVel = res.velocity
+    uphillCached = res.cachedSpeed
+}
+suite.assert(uphillCached > 750.0, "High cached speed carries up kicker ramp with momentum inertia (> 750 pt/s): \(uphillCached)")
 
 // Test 15: Uphill Pedal Traction & Anti-Rollback Ratchet Invariants
 print("\n• Test Group 15: Uphill Pedal Traction & Anti-Rollback Ratchet Invariants")
@@ -750,9 +834,114 @@ suite.assert(climbSpeedAfter1Frame > 70.0, "Pedal climb force powers bike up ste
 
 // 3. Normal low-speed pedaling does not trigger transition momentum boost
 let slowClimbVel = CGVector(dx: 60.0, dy: 30.0)
-let untouchedVel = testTransitionMomentum(velocity: slowClimbVel, tangent: steepTangent)
+let (untouchedVel, _) = testTransitionMomentum(velocity: slowClimbVel, tangent: steepTangent)
 suite.assertEqual(untouchedVel.dx, slowClimbVel.dx, "Low-speed climbing does not trigger transition boost (Vx unchanged)")
 suite.assertEqual(untouchedVel.dy, slowClimbVel.dy, "Low-speed climbing does not trigger transition boost (Vy unchanged)")
+
+print("\n• Test Group 16: Alternate Mega Jump Map & Smooth Physics Continuity Invariants")
+
+struct TestSegment {
+    let start: CGPoint
+    let end: CGPoint
+    let startSlope: CGFloat
+    let endSlope: CGFloat
+    let isLinear: Bool
+    let maximumUphillSlope: CGFloat?
+
+    init(start: CGPoint, end: CGPoint, startSlope: CGFloat, endSlope: CGFloat, isLinear: Bool = false, maximumUphillSlope: CGFloat? = 1.2) {
+        self.start = start
+        self.end = end
+        self.startSlope = startSlope
+        self.endSlope = endSlope
+        self.isLinear = isLinear
+        self.maximumUphillSlope = maximumUphillSlope
+    }
+}
+
+func testMakeMegaJumpChunk(index: Int) -> [TestSegment] {
+    let cycle = index / 5
+    let phase = index % 5
+    let ox = CGFloat(cycle) * 11590.0
+    let oy = CGFloat(cycle) * -6200.0
+
+    switch phase {
+    case 0:
+        return [
+            TestSegment(start: CGPoint(x: -480 + ox, y: 1200 + oy), end: CGPoint(x: 20 + ox, y: 1200 + oy), startSlope: 0, endSlope: 0),
+            TestSegment(start: CGPoint(x: 20 + ox, y: 1200 + oy), end: CGPoint(x: 260 + ox, y: 1080 + oy), startSlope: 0, endSlope: -1.0),
+            TestSegment(start: CGPoint(x: 260 + ox, y: 1080 + oy), end: CGPoint(x: 1760 + ox, y: -420 + oy), startSlope: -1.0, endSlope: -1.0)
+        ]
+    case 1:
+        return [
+            TestSegment(start: CGPoint(x: 1760 + ox, y: -420 + oy), end: CGPoint(x: 3260 + ox, y: -1920 + oy), startSlope: -1.0, endSlope: -1.0),
+            TestSegment(start: CGPoint(x: 3260 + ox, y: -1920 + oy), end: CGPoint(x: 3660 + ox, y: -2080 + oy), startSlope: -1.0, endSlope: 0.0),
+            TestSegment(start: CGPoint(x: 3660 + ox, y: -2080 + oy), end: CGPoint(x: 3860 + ox, y: -2030 + oy), startSlope: 0.0, endSlope: 0.48),
+            TestSegment(start: CGPoint(x: 3860 + ox, y: -2030 + oy), end: CGPoint(x: 3990 + ox, y: -1968 + oy), startSlope: 0.48, endSlope: 0.48),
+            TestSegment(start: CGPoint(x: 3990 + ox, y: -1968 + oy), end: CGPoint(x: 4110 + ox, y: -1975 + oy), startSlope: 0.48, endSlope: -0.55)
+        ]
+    case 2:
+        return [
+            TestSegment(start: CGPoint(x: 4110 + ox, y: -1975 + oy), end: CGPoint(x: 6610 + ox, y: -3350 + oy), startSlope: -0.55, endSlope: -0.55)
+        ]
+    case 3:
+        return [
+            TestSegment(start: CGPoint(x: 6610 + ox, y: -3350 + oy), end: CGPoint(x: 9110 + ox, y: -4725 + oy), startSlope: -0.55, endSlope: -0.55)
+        ]
+    case 4:
+        return [
+            TestSegment(start: CGPoint(x: 9110 + ox, y: -4725 + oy), end: CGPoint(x: 10110 + ox, y: -5000 + oy), startSlope: -0.55, endSlope: 0.0),
+            TestSegment(start: CGPoint(x: 10110 + ox, y: -5000 + oy), end: CGPoint(x: 11110 + ox, y: -5000 + oy), startSlope: 0.0, endSlope: 0.0)
+        ]
+    default:
+        return []
+    }
+}
+
+// 1. Check spawn flat platform
+let chunk0 = testMakeMegaJumpChunk(index: 0)
+suite.assertEqual(chunk0[0].start.x, -480.0, "Mega Jump starts at x = -480")
+suite.assertEqual(chunk0[0].start.y, 1200.0, "Mega Jump starting elevation is 1200")
+suite.assertEqual(chunk0[0].startSlope, 0.0, "Mega Jump spawn starting slope is flat 0.0")
+
+// 2. Downhill leadup length & steepness
+let leadupStart = chunk0[1].start.x // x = 20
+let leadupEnd = testMakeMegaJumpChunk(index: 1)[0].end.x // x = 3260
+let leadupLength = leadupEnd - leadupStart
+suite.assert(leadupLength >= 3000.0, "Downhill leadup is massive: \(leadupLength) >= 3000 pt")
+suite.assertEqual(testMakeMegaJumpChunk(index: 1)[0].endSlope, -1.0, "Downhill leadup is steep 45-degree plunge (-1.0)")
+
+// 3. Launch ramp takeoff slope & elevation gain (short, fast, snappy)
+let chunk1 = testMakeMegaJumpChunk(index: 1)
+let launchSeg = chunk1[3] // snappy kicker ramp
+suite.assert(launchSeg.endSlope <= 0.50, "Launch ramp has fast, forward-launching angle: \(launchSeg.endSlope) <= 0.50 (~25.6°)")
+let rampGain = launchSeg.end.y - chunk1[1].end.y // y = -1968 - (-2080) = 112
+suite.assert(rampGain <= 150.0, "Launch ramp is short & snappy (does not hit a vertical wall): \(rampGain) <= 150 pt")
+
+// 4. Landing catch runway length
+let chunk2 = testMakeMegaJumpChunk(index: 2)
+let chunk3 = testMakeMegaJumpChunk(index: 3)
+let landingCatchLen = (chunk3[0].end.x - chunk2[0].start.x)
+suite.assert(landingCatchLen >= 5000.0, "Landing catch zone is expansive: \(landingCatchLen) >= 5000 pt")
+suite.assertEqual(chunk2[0].startSlope, -0.55, "Landing catch slope is smooth -0.55")
+
+// 5. C1 Continuity check across 15 chunks (3 full cycles)
+var prevEnd: CGPoint?
+var prevSlope: CGFloat?
+var c1Continuous = true
+
+for chunkIdx in 0..<15 {
+    let segs = testMakeMegaJumpChunk(index: chunkIdx)
+    for seg in segs {
+        if let pe = prevEnd, let ps = prevSlope {
+            if abs(seg.start.x - pe.x) > 0.001 || abs(seg.start.y - pe.y) > 0.001 || abs(seg.startSlope - ps) > 0.001 {
+                c1Continuous = false
+            }
+        }
+        prevEnd = seg.end
+        prevSlope = seg.endSlope
+    }
+}
+suite.assert(c1Continuous, "All 15 chunks (3 full Mega Jump cycles) maintain strict C1 position & slope continuity")
 
 let allPassed = suite.summary()
 exit(allPassed ? 0 : 1)

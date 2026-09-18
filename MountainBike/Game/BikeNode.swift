@@ -266,39 +266,58 @@ final class BikeNode: SKNode {
     /// Clamps wheel and chassis positions to always remain above the terrain surface,
     /// cancelling downward penetration momentum and preventing the bike from falling
     /// through the map.
-    func recoverTerrainPenetration(terrainHeightAt: (CGFloat) -> CGFloat) {
+    func recoverTerrainPenetration(
+        terrainHeightAt: (CGFloat) -> CGFloat,
+        terrainSlopeAt: ((CGFloat) -> CGFloat)? = nil
+    ) {
         let wheelRadius = GameTuning.Bike.collisionWheelRadius
         let recoveryClearance = GameTuning.Terrain.wheelPenetrationRecoveryClearance
-
         let trigger = GameTuning.Terrain.wheelPenetrationRecoveryTrigger
 
         // 1. Recover rear wheel
-        let rearTerrainY = terrainHeightAt(rearWheel.position.x)
-        let idealRearY = rearTerrainY + wheelRadius
-        if rearWheel.position.y <= idealRearY - trigger {
-            rearWheel.position.y = idealRearY + recoveryClearance
-            if let body = rearWheel.physicsBody, body.velocity.dy < 0 {
-                body.velocity.dy = 0
+        let rearSlope = terrainSlopeAt?(rearWheel.position.x) ?? 0
+        // On uphill transitions (slope > 0.05), the terrain ahead rises in front of the wheel,
+        // so terrainHeightAt(x) samples the ramp wall rather than ground beneath the wheel.
+        // Box2D's circle collider handles rising ramps naturally; skipping upward ramps
+        // prevents falsely teleporting the wheel and tearing the pin joint apart.
+        if rearSlope <= 0.05 {
+            let rearTerrainY = terrainHeightAt(rearWheel.position.x)
+            let idealRearY = rearTerrainY + wheelRadius
+            if rearWheel.position.y <= idealRearY - trigger {
+                let deltaY = (idealRearY + recoveryClearance) - rearWheel.position.y
+                rearWheel.position.y += deltaY
+                swingarm.position.y += deltaY
+                if let body = rearWheel.physicsBody, body.velocity.dy < 0 {
+                    body.velocity.dy = 0
+                }
             }
         }
 
         // 2. Recover front wheel
-        let frontTerrainY = terrainHeightAt(frontWheel.position.x)
-        let idealFrontY = frontTerrainY + wheelRadius
-        if frontWheel.position.y <= idealFrontY - trigger {
-            frontWheel.position.y = idealFrontY + recoveryClearance
-            if let body = frontWheel.physicsBody, body.velocity.dy < 0 {
-                body.velocity.dy = 0
+        let frontSlope = terrainSlopeAt?(frontWheel.position.x) ?? 0
+        if frontSlope <= 0.05 {
+            let frontTerrainY = terrainHeightAt(frontWheel.position.x)
+            let idealFrontY = frontTerrainY + wheelRadius
+            if frontWheel.position.y <= idealFrontY - trigger {
+                let deltaY = (idealFrontY + recoveryClearance) - frontWheel.position.y
+                frontWheel.position.y += deltaY
+                frontFork.position.y += deltaY
+                if let body = frontWheel.physicsBody, body.velocity.dy < 0 {
+                    body.velocity.dy = 0
+                }
             }
         }
 
         // 3. Recover chassis frame
-        let chassisTerrainY = terrainHeightAt(chassis.position.x)
-        let minChassisY = chassisTerrainY + GameTuning.Bike.frameGuardRadius
-        if chassis.position.y <= minChassisY - trigger {
-            chassis.position.y = minChassisY + recoveryClearance
-            if let body = chassis.physicsBody, body.velocity.dy < 0 {
-                body.velocity.dy = 0
+        let chassisSlope = terrainSlopeAt?(chassis.position.x) ?? 0
+        if chassisSlope <= 0.05 {
+            let chassisTerrainY = terrainHeightAt(chassis.position.x)
+            let minChassisY = chassisTerrainY + GameTuning.Bike.frameGuardRadius
+            if chassis.position.y <= minChassisY - trigger {
+                chassis.position.y = minChassisY + recoveryClearance
+                if let body = chassis.physicsBody, body.velocity.dy < 0 {
+                    body.velocity.dy = 0
+                }
             }
         }
     }

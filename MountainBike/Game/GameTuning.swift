@@ -161,7 +161,7 @@ enum GameTuning {
         /// the visual wheels roll from real travel.
         static let tireFriction: CGFloat = 1.10
         static let restitution: CGFloat = 0.08
-        static let maximumSpeed: CGFloat = 1_500
+        static let maximumSpeed: CGFloat = 4_000
         static let maximumChassisAngularVelocity: CGFloat = 4.0
         static let groundedTolerance: CGFloat = 8
         /// A generous multiple of the bike's own resting size (wheels sit
@@ -571,10 +571,18 @@ enum GameTuning {
         /// the vehicle; they never write velocity, change gravity, or lift
         /// the bike.
         static let pedalForce: CGFloat = 18_000
-        static let pedalFadeSpeed: CGFloat = 1_200
+        static let pedalFadeSpeed: CGFloat = 3_000
         static let pedalClimbForce: CGFloat = 38_000
         static let groundLeanTorque: CGFloat = 48
         static let airLeanTorque: CGFloat = 28
+
+        /// Downhill gravity acceleration multiplier.
+        /// Massively increases the speed gained on sustained downhills (aerodynamic tuck gravity gain).
+        static let downhillGravityMultiplier: CGFloat = 6.0
+        /// Minimal rolling drag when coasting (0.5% decay per second).
+        static let coastingRollingDrag: CGFloat = 0.005
+        /// Momentum inertia factor that protects cached downhill speed on uphills.
+        static let uphillGravityReduction: CGFloat = 0.40
     }
 
     enum Crash {
