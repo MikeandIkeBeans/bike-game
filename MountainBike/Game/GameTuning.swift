@@ -588,11 +588,11 @@ enum GameTuning {
     enum Crash {
         static let spawnGrace: TimeInterval = 1.6
         static let minimumTravelBeforeCrashChecks: CGFloat = 90
-        static let maximumRelativeLeanAngle: CGFloat = .pi * 0.70
-        static let minimumFrameStrikePitch: CGFloat = 1.10
-        /// The frame is a real collision body. This only guards an impossible
-        /// complete aerial somersault that could otherwise land numerically.
-        static let maximumAirborneRotation: CGFloat = .pi * 0.82
+        static let maximumRelativeLeanAngle: CGFloat = .pi * 0.50
+        static let minimumFrameStrikePitch: CGFloat = 0.85
+        /// The frame is a real collision body. This guards impossible
+        /// over-rotations or landing upside down.
+        static let maximumAirborneRotation: CGFloat = .pi * 0.72
         static let fallBelowTerrainDistance: CGFloat = 360
     }
 

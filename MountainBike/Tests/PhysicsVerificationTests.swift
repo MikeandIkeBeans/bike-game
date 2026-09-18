@@ -647,22 +647,40 @@ func testTransitionMomentum(
     velocity: CGVector,
     tangent: CGVector,
     cachedSpeed: CGFloat = 0,
+    isMegaJump: Bool = true,
     delta: TimeInterval = 0.016
-) -> (velocity: CGVector, cachedSpeed: CGFloat) {
+) -> (velocity: CGVector, cachedSpeed: CGFloat, crashed: Bool) {
     let currentSpeed = hypot(velocity.dx, velocity.dy)
-    guard tangent.dx > 0.1, velocity.dx > 50 else { return (velocity, 0) }
+    guard tangent.dx > 0.1, velocity.dx > 50 else { return (velocity, 0, false) }
 
     let alongTrail = velocity.dx * tangent.dx + velocity.dy * tangent.dy
     let normal = CGVector(dx: -tangent.dy, dy: tangent.dx)
     let normalVelocity = velocity.dx * normal.dx + velocity.dy * normal.dy
     var groundSpeed = max(cachedSpeed, max(alongTrail, currentSpeed))
+    let maxLaunchVy: CGFloat = isMegaJump ? 600.0 : 380.0
 
     if normalVelocity < -8 {
+        // Slamming into a steep wall or sharp U-lip without braking triggers crash
+        if tangent.dy > 0.65 && currentSpeed > 450 && normalVelocity < -180 {
+            return (velocity, 0, true)
+        }
+
         let redirectSpeed = max(groundSpeed, currentSpeed)
-        let targetVelocity = CGVector(dx: tangent.dx * redirectSpeed, dy: tangent.dy * redirectSpeed)
+        let maxTangentDy: CGFloat = isMegaJump ? 0.55 : 0.48
+        let clampedTangentDy = min(tangent.dy, maxTangentDy)
+        let clampedTangentDx = sqrt(max(0.01, 1.0 - clampedTangentDy * clampedTangentDy))
+        let effectiveTangent = CGVector(dx: clampedTangentDx, dy: clampedTangentDy)
+
+        let targetVelocity = CGVector(
+            dx: effectiveTangent.dx * redirectSpeed,
+            dy: min(effectiveTangent.dy * redirectSpeed, maxLaunchVy)
+        )
         let blend = min(CGFloat(delta) * 35.0, 0.90)
         var newVx = velocity.dx * (1 - blend) + targetVelocity.dx * blend
         var newVy = velocity.dy * (1 - blend) + targetVelocity.dy * blend
+
+        // Strictly clamp maximum vertical launch velocity: eliminates the launch into space bug
+        newVy = min(newVy, maxLaunchVy)
 
         let newSpeed = hypot(newVx, newVy)
         if newSpeed > redirectSpeed && newSpeed > 0 {
@@ -671,25 +689,30 @@ func testTransitionMomentum(
             newVy *= scale
         }
         let finalSpeed = hypot(newVx, newVy)
-        return (CGVector(dx: newVx, dy: newVy), finalSpeed)
+        return (CGVector(dx: newVx, dy: newVy), finalSpeed, false)
     } else {
         let baseGravityAlongTrail = (-58.86) * tangent.dy
 
         if tangent.dy < -0.05 {
             let slopeRatio = min(1.0, -tangent.dy / 0.7071)
-            let multiplier = 1.0 + slopeRatio * (6.0 - 1.0)
-            let compoundingBonus = 1.0 + min(1.5, groundSpeed / 500.0)
+            let multiplier = 1.0 + slopeRatio * (isMegaJump ? (6.0 - 1.0) : 0.35)
+            let compoundingBonus = isMegaJump ? (1.0 + min(1.5, groundSpeed / 500.0)) : 1.0
             let amplifiedGravity = baseGravityAlongTrail * multiplier * compoundingBonus
             groundSpeed += amplifiedGravity * CGFloat(delta)
         } else if tangent.dy > 0.05 && groundSpeed > 180 {
-            let reducedGravity = baseGravityAlongTrail * 0.40
+            let reduction = isMegaJump ? 0.40 : 0.85
+            let reducedGravity = baseGravityAlongTrail * reduction
             groundSpeed += reducedGravity * CGFloat(delta)
         } else {
             groundSpeed += baseGravityAlongTrail * CGFloat(delta)
         }
 
-        let rollingDrag: CGFloat = 0.005
+        let rollingDrag: CGFloat = isMegaJump ? 0.005 : 0.040
         groundSpeed *= max(0, 1.0 - rollingDrag * CGFloat(delta))
+
+        if !isMegaJump && groundSpeed > 920 {
+            groundSpeed = 920
+        }
 
         if alongTrail < groundSpeed && groundSpeed > 60 {
             let targetVx = tangent.dx * groundSpeed
@@ -697,9 +720,9 @@ func testTransitionMomentum(
             let sustainBlend = min(CGFloat(delta) * 20.0, 0.75)
             let newVx = velocity.dx * (1 - sustainBlend) + targetVx * sustainBlend
             let newVy = velocity.dy * (1 - sustainBlend) + targetVy * sustainBlend
-            return (CGVector(dx: newVx, dy: newVy), groundSpeed)
+            return (CGVector(dx: newVx, dy: newVy), groundSpeed, false)
         } else {
-            return (velocity, max(groundSpeed, alongTrail))
+            return (velocity, max(groundSpeed, alongTrail), false)
         }
     }
 }
@@ -718,7 +741,7 @@ let downhillSpeed = hypot(downhillVel.dx, downhillVel.dy) // ~492.4
 let kickerAngle = CGFloat.pi / 6.0
 let kickerTangent = CGVector(dx: cos(kickerAngle), dy: sin(kickerAngle)) // (0.866, 0.500)
 
-let (redirectedVel, _) = testTransitionMomentum(velocity: downhillVel, tangent: kickerTangent, delta: 0.016)
+let (redirectedVel, _, _) = testTransitionMomentum(velocity: downhillVel, tangent: kickerTangent, delta: 0.016)
 let redirectedSpeed = hypot(redirectedVel.dx, redirectedVel.dy)
 
 suite.assert(redirectedVel.dy > downhillVel.dy, "Vertical velocity is converted upward: \(downhillVel.dy) -> \(redirectedVel.dy)")
@@ -741,7 +764,7 @@ suite.assert(runningVel.dy > -50.0, "Downward velocity is fully absorbed and red
 let scoopVel = CGVector(dx: 450.0, dy: -450.0)
 let scoopSpeed = hypot(scoopVel.dx, scoopVel.dy)
 let flatTangent = CGVector(dx: 1.0, dy: 0.0)
-let (scoopRedirect, _) = testTransitionMomentum(velocity: scoopVel, tangent: flatTangent, delta: 0.016)
+let (scoopRedirect, _, _) = testTransitionMomentum(velocity: scoopVel, tangent: flatTangent, delta: 0.016)
 suite.assert(scoopRedirect.dx > scoopVel.dx, "Downhill speed is converted into forward speed in scoop: \(scoopVel.dx) -> \(scoopRedirect.dx)")
 suite.assert(scoopRedirect.dy > scoopVel.dy, "Downward velocity is absorbed in scoop: \(scoopVel.dy) -> \(scoopRedirect.dy)")
 suite.assert(hypot(scoopRedirect.dx, scoopRedirect.dy) <= scoopSpeed + 0.1, "Scoop redirection conserves scalar speed: \(hypot(scoopRedirect.dx, scoopRedirect.dy)) <= \(scoopSpeed)")
@@ -779,6 +802,31 @@ for _ in 0..<15 {
     uphillCached = res.cachedSpeed
 }
 suite.assert(uphillCached > 750.0, "High cached speed carries up kicker ramp with momentum inertia (> 750 pt/s): \(uphillCached)")
+
+// 8. Launch into space bug prevention: hitting steep 60° lip at 2,000 pt/s strictly bounds Vy
+let steepLipTangent = CGVector(dx: cos(CGFloat.pi / 3.0), dy: sin(CGFloat.pi / 3.0)) // 60 deg (0.50, 0.866)
+let hyperspeedVel = CGVector(dx: 1500.0, dy: -500.0)
+let (clampedMegaVel, _, _) = testTransitionMomentum(velocity: hyperspeedVel, tangent: steepLipTangent, cachedSpeed: 2000.0, isMegaJump: true)
+suite.assert(clampedMegaVel.dy <= 600.01, "Mega Jump launch Vy is strictly capped at 600 (eliminates space launch): \(clampedMegaVel.dy) <= 600")
+
+let (clampedTrailVel, _, _) = testTransitionMomentum(velocity: hyperspeedVel, tangent: steepLipTangent, cachedSpeed: 1200.0, isMegaJump: false)
+suite.assert(clampedTrailVel.dy <= 380.01, "Trail Rush launch Vy is strictly capped at 380 (eliminates space launch): \(clampedTrailVel.dy) <= 380")
+
+// 9. Wall slam crash guard: slamming into steep wall (> 0.65 dy) at extreme speed triggers crash
+let wallTangent = CGVector(dx: 0.35, dy: 0.93)
+let slamVel = CGVector(dx: 600.0, dy: -200.0)
+let (_, _, wallCrashed) = testTransitionMomentum(velocity: slamVel, tangent: wallTangent, cachedSpeed: 600.0, isMegaJump: false)
+suite.assert(wallCrashed, "Slamming into steep wall at high speed triggers crash instead of launching into space")
+
+// 10. Trail Rush realistic speed governing: 1.5s of downhill on Trail Rush stays controlled (< 600 pt/s)
+var trailDownhillVel = CGVector(dx: 200.0 * downhillTangent.dx, dy: 200.0 * downhillTangent.dy)
+var trailDownhillCached: CGFloat = 200.0
+for _ in 0..<94 {
+    let res = testTransitionMomentum(velocity: trailDownhillVel, tangent: downhillTangent, cachedSpeed: trailDownhillCached, isMegaJump: false, delta: 0.016)
+    trailDownhillVel = res.velocity
+    trailDownhillCached = res.cachedSpeed
+}
+suite.assert(trailDownhillCached < 600.0, "Trail Rush downhill speed remains realistic and controlled: \(trailDownhillCached) < 600")
 
 // Test 15: Uphill Pedal Traction & Anti-Rollback Ratchet Invariants
 print("\n• Test Group 15: Uphill Pedal Traction & Anti-Rollback Ratchet Invariants")
@@ -834,7 +882,7 @@ suite.assert(climbSpeedAfter1Frame > 70.0, "Pedal climb force powers bike up ste
 
 // 3. Normal low-speed pedaling does not trigger transition momentum boost
 let slowClimbVel = CGVector(dx: 60.0, dy: 30.0)
-let (untouchedVel, _) = testTransitionMomentum(velocity: slowClimbVel, tangent: steepTangent)
+let (untouchedVel, _, _) = testTransitionMomentum(velocity: slowClimbVel, tangent: steepTangent)
 suite.assertEqual(untouchedVel.dx, slowClimbVel.dx, "Low-speed climbing does not trigger transition boost (Vx unchanged)")
 suite.assertEqual(untouchedVel.dy, slowClimbVel.dy, "Low-speed climbing does not trigger transition boost (Vy unchanged)")
 

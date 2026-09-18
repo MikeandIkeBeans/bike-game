@@ -248,6 +248,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         updateSpawnPitchLock()
         terrainStream.ensureTerrainAhead(of: bike.chassisPosition.x)
         applyPedalDrive()
+        applyBraking()
         updatePedalRoost()
         applyRiderLean()
         capVehicleMotion()
@@ -352,6 +353,40 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         }
     }
 
+    /// Rear wheel braking applied while grounded when leaning back (or pressing brake key).
+    /// Decelerates the bike along the trail tangent, decreases cached rolling momentum,
+    /// and allows controlled speed management on technical trails.
+    private func applyBraking() {
+        guard isGrounded, leanInput < 0, let tangent = pedalSupportTangent() else { return }
+        let alongTrail = bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy
+        guard alongTrail > 20 else { return }
+
+        // Progressive rear wheel braking deceleration (450 pt/s² ~ 100 km/h per second)
+        let brakeDecel = CGFloat(frameDelta) * 450.0
+        cachedGroundSpeed = max(0, cachedGroundSpeed - brakeDecel)
+
+        let targetSpeed = max(0, alongTrail - brakeDecel)
+        let targetVx = tangent.dx * targetSpeed
+        let targetVy = tangent.dy * targetSpeed
+
+        let blend: CGFloat = min(CGFloat(frameDelta) * 16.0, 0.65)
+        let newVx = bike.velocity.dx * (1 - blend) + targetVx * blend
+        let newVy = bike.velocity.dy * (1 - blend) + targetVy * blend
+        let newVelocity = CGVector(dx: newVx, dy: newVy)
+        for body in bike.allBodies {
+            body.velocity = newVelocity
+        }
+
+        // Emit brake skid dust if braking at speed
+        if alongTrail > 150 && roostTimer >= 0.08 {
+            roostTimer = 0
+            emitPedalRoost(at: CGPoint(
+                x: bike.rearAxlePosition.x,
+                y: bike.rearAxlePosition.y - GameTuning.Bike.collisionWheelRadius
+            ))
+        }
+    }
+
     private func updatePedalRoost() {
         guard pedalHeld, isGrounded else {
             roostTimer = 0
@@ -394,14 +429,36 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         // Keep cached forward momentum synchronized with physics acceleration
         cachedGroundSpeed = max(cachedGroundSpeed, max(alongTrail, currentSpeed))
 
+        let isMegaJump = (mapMode == .megaJump)
+        let maxLaunchVy: CGFloat = isMegaJump ? 600.0 : 380.0
+
         if normalVelocity < -8 {
+            // Slamming into a steep upward wall or sharp U-lip without braking causes a realistic crash
+            if tangent.dy > 0.65 && currentSpeed > 450 && normalVelocity < -180 {
+                requestCrash(.frameStrike)
+                return
+            }
+
             // Actively compressing into the terrain (bottom scoop, trough transition, or kicker ramp face).
             // Smoothly redirect incoming momentum along the forward terrain tangent at full scalar speed.
             let redirectSpeed = max(cachedGroundSpeed, currentSpeed)
-            let targetVelocity = CGVector(dx: tangent.dx * redirectSpeed, dy: tangent.dy * redirectSpeed)
+
+            // Clamp the redirection launch angle so steep lips cannot launch the bike into orbit
+            let maxTangentDy: CGFloat = isMegaJump ? 0.55 : 0.48
+            let clampedTangentDy = min(tangent.dy, maxTangentDy)
+            let clampedTangentDx = sqrt(max(0.01, 1.0 - clampedTangentDy * clampedTangentDy))
+            let effectiveTangent = CGVector(dx: clampedTangentDx, dy: clampedTangentDy)
+
+            let targetVelocity = CGVector(
+                dx: effectiveTangent.dx * redirectSpeed,
+                dy: min(effectiveTangent.dy * redirectSpeed, maxLaunchVy)
+            )
             let blend: CGFloat = min(CGFloat(frameDelta) * 35.0, 0.90)
             var newVx = bike.velocity.dx * (1 - blend) + targetVelocity.dx * blend
             var newVy = bike.velocity.dy * (1 - blend) + targetVelocity.dy * blend
+
+            // Strictly clamp maximum vertical launch velocity: eliminates the launch into space bug
+            newVy = min(newVy, maxLaunchVy)
 
             // Strictly conserve kinetic energy: never exceed incoming speed
             let newSpeed = hypot(newVx, newVy)
@@ -418,31 +475,35 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             cachedGroundSpeed = hypot(newVx, newVy)
         } else {
             // Rolling / coasting along the terrain:
-            // 1. Gravity acceleration along the slope:
-            // deltaV = (g · T) * dt = g.dy * tangent.dy * dt
             let baseGravityAlongTrail = GameTuning.Simulation.gravity.dy * tangent.dy
 
             if tangent.dy < -0.05 {
-                // Sustained downhill: rapidly increase speed gain from gravity
+                // Downhill acceleration: Mega Jump gets massive compounding boost; Trail Rush gets natural trail flow
                 let slopeRatio = min(1.0, -tangent.dy / 0.7071)
-                let multiplier = 1.0 + slopeRatio * (GameTuning.Handling.downhillGravityMultiplier - 1.0)
-                // Aerodynamic tuck momentum compounding: acceleration builds rapidly as downhill speed builds
-                let compoundingBonus = 1.0 + min(1.5, cachedGroundSpeed / 500.0)
+                let multiplier = 1.0 + slopeRatio * (isMegaJump ? (GameTuning.Handling.downhillGravityMultiplier - 1.0) : 0.35)
+                let compoundingBonus = isMegaJump ? (1.0 + min(1.5, cachedGroundSpeed / 500.0)) : 1.0
                 let amplifiedGravity = baseGravityAlongTrail * multiplier * compoundingBonus
                 cachedGroundSpeed += amplifiedGravity * CGFloat(frameDelta)
             } else if tangent.dy > 0.05 && cachedGroundSpeed > 180 {
-                // Uphill with high cached downhill speed: forward momentum inertia carries through
-                let reducedGravity = baseGravityAlongTrail * GameTuning.Handling.uphillGravityReduction
+                // Uphill with cached downhill speed: forward momentum inertia carries through
+                let reduction = isMegaJump ? GameTuning.Handling.uphillGravityReduction : 0.85
+                let reducedGravity = baseGravityAlongTrail * reduction
                 cachedGroundSpeed += reducedGravity * CGFloat(frameDelta)
             } else {
                 // Flat or gentle slope
                 cachedGroundSpeed += baseGravityAlongTrail * CGFloat(frameDelta)
             }
 
-            // 2. Minimal rolling drag (make it very hard to lose speed once cached)
-            cachedGroundSpeed *= max(0, 1.0 - GameTuning.Handling.coastingRollingDrag * CGFloat(frameDelta))
+            // Minimal rolling drag on Mega Jump (0.5%/s); natural trail dirt drag on Trail Rush (4%/s)
+            let drag = isMegaJump ? GameTuning.Handling.coastingRollingDrag : 0.040
+            cachedGroundSpeed *= max(0, 1.0 - drag * CGFloat(frameDelta))
 
-            // 3. Sustain bike's physical momentum against Box2D edge-chain micro-collisions
+            // Trail Rush maximum trail speed cap: 920 pt/s (~72 km/h)
+            if !isMegaJump && cachedGroundSpeed > 920 {
+                cachedGroundSpeed = 920
+            }
+
+            // Sustain bike's physical momentum against Box2D edge-chain micro-collisions
             if alongTrail < cachedGroundSpeed && cachedGroundSpeed > 60 {
                 let targetVx = tangent.dx * cachedGroundSpeed
                 let targetVy = tangent.dy * cachedGroundSpeed
@@ -488,10 +549,11 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func capVehicleMotion() {
+        let maxAllowedSpeed: CGFloat = (mapMode == .megaJump) ? GameTuning.Bike.maximumSpeed : 950.0
         for body in bike.allBodies {
             let speed = vectorLength(body.velocity)
-            if speed > GameTuning.Bike.maximumSpeed {
-                let scale = GameTuning.Bike.maximumSpeed / speed
+            if speed > maxAllowedSpeed {
+                let scale = maxAllowedSpeed / speed
                 body.velocity = CGVector(dx: body.velocity.dx * scale, dy: body.velocity.dy * scale)
             }
         }
@@ -784,7 +846,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             guard let key = press.key else { continue }
             let chars = key.charactersIgnoringModifiers.lowercased()
             switch chars {
-            case "a", UIKeyCommand.inputLeftArrow.lowercased():
+            case "a", UIKeyCommand.inputLeftArrow.lowercased(), "s", UIKeyCommand.inputDownArrow.lowercased():
                 keyboardBackHeld = true
                 handled = true
             case "d", UIKeyCommand.inputRightArrow.lowercased():
@@ -838,7 +900,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             guard let key = press.key else { continue }
             let chars = key.charactersIgnoringModifiers.lowercased()
             switch chars {
-            case "a", UIKeyCommand.inputLeftArrow.lowercased():
+            case "a", UIKeyCommand.inputLeftArrow.lowercased(), "s", UIKeyCommand.inputDownArrow.lowercased():
                 keyboardBackHeld = false
                 handled = true
             case "d", UIKeyCommand.inputRightArrow.lowercased():
