@@ -142,23 +142,23 @@ enum GameTuning {
         static let swingarmShockMountLocal = CGPoint(x: -12, y: -4)
         static let rearAxleLocal = CGPoint(x: -25, y: -14)
         /// Travel stops, joint friction, and spring rates for the rear shock.
-        static let lowerTravelAngle: CGFloat = -0.02
-        static let upperTravelAngle: CGFloat = 0.05
+        static let lowerTravelAngle: CGFloat = -0.06
+        static let upperTravelAngle: CGFloat = 0.20
         static let pivotFrictionTorque: CGFloat = 1.50
-        static let springFrequency: CGFloat = 14.0
-        static let springDamping: CGFloat = 0.97
+        static let springFrequency: CGFloat = 24.0
+        static let springDamping: CGFloat = 0.80
         static let topOutStrapExtraLength: CGFloat = 0.2
         /// Live telescoping front fork suspension masses, damping, and travel limits.
         static let frontForkMass: CGFloat = 0.50
         static let frontForkAngularDamping: CGFloat = 1.20
         static let frontForkAxis = CGVector(dx: -0.414, dy: 0.910)
-        static let frontSpringFrequency: CGFloat = 15.0
-        static let frontSpringDamping: CGFloat = 0.97
-        static let frontLowerTravelLimit: CGFloat = -4.0
+        static let frontSpringFrequency: CGFloat = 26.0
+        static let frontSpringDamping: CGFloat = 0.80
+        static let frontLowerTravelLimit: CGFloat = -10.0
         static let frontUpperTravelLimit: CGFloat = 0.0
         /// Low chassis and swingarm friction prevents abrasive drag when compressing in scoops.
         /// High tire friction provides traction for wheel drive and climbing.
-        static let chassisFriction: CGFloat = 0.05
+        static let chassisFriction: CGFloat = 0.02
         static let tireFriction: CGFloat = 0.90
         static let restitution: CGFloat = 0.08
         static let maximumSpeed: CGFloat = 4_000
@@ -177,10 +177,11 @@ enum GameTuning {
         /// with both tire fixtures into one rigid body; it is never a
         /// separate chassis or suspension body.
         static let frameCollisionVertices: [CGPoint] = [
-            CGPoint(x: -20, y: -8),
-            CGPoint(x: 22, y: -8),
-            CGPoint(x: 22, y: 16),
-            CGPoint(x: -16, y: 22)
+            CGPoint(x: -12, y: 2),
+            CGPoint(x: -5, y: 0),
+            CGPoint(x: 14, y: 8),
+            CGPoint(x: 14, y: 16),
+            CGPoint(x: -14, y: 16)
         ]
     }
 

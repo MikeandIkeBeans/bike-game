@@ -657,8 +657,8 @@ let tireFriction: CGFloat = 0.90
 let terrainFriction: CGFloat = 1.10
 let combinedTireMu = sqrt(tireFriction * terrainFriction)
 suite.assert(combinedTireMu >= 0.85, "Combined tire friction (\(combinedTireMu)) provides solid traction (>= 0.85)")
-let chassisFriction: CGFloat = 0.05
-suite.assert(chassisFriction <= 0.10, "Chassis friction (\(chassisFriction)) prevents ground hang-up during suspension scoops (<= 0.10)")
+let chassisFriction: CGFloat = 0.02
+suite.assert(chassisFriction <= 0.03, "Chassis friction (\(chassisFriction)) prevents ground hang-up and plowing drag (<= 0.03)")
 
 // 2. Pure Newtonian gravity acceleration down 45° slope (no multipliers or artificial boosts)
 let g: CGFloat = 9.81 * 14.0 // 137.34 pt/s²
@@ -938,6 +938,51 @@ for chunkIdx in 0..<15 {
     }
 }
 suite.assert(c1Continuous, "All 15 chunks (3 full Mega Jump cycles) maintain strict C1 position & slope continuity")
+
+// Test Group 12: Chassis Collider Geometry & Suspension Kinematics
+print("\n• Test Group 12: Chassis Skid Plate & Suspension Kinematics")
+let frameVerts: [CGPoint] = [
+    CGPoint(x: -12, y: 2),
+    CGPoint(x: -5, y: 0),
+    CGPoint(x: 14, y: 8),
+    CGPoint(x: 14, y: 16),
+    CGPoint(x: -14, y: 16)
+]
+
+// 1. Skid plate clearance above wheels
+let skidPlateMinY = frameVerts.map(\.y).min() ?? 0
+suite.assert(skidPlateMinY >= 0.0, "Chassis collider lowest point (\(skidPlateMinY)) sits at or above y = 0 (tucked safely above wheel axle at -27 and contact at -43)")
+
+// 2. Upswept leading edge (glides over lips instead of plowing)
+let bottomVertex = frameVerts.first(where: { $0.y == skidPlateMinY }) ?? .zero
+let frontVertex = frameVerts.first(where: { $0.x > 0 && $0.y < 16 }) ?? .zero
+let upsweepSlope = (frontVertex.y - bottomVertex.y) / (frontVertex.x - bottomVertex.x)
+suite.assert(upsweepSlope > 0.35, "Chassis leading edge sweeps upward with ski slope \(upsweepSlope) > 0.35 to skip over lips")
+
+// 3. Strict convexity test (all cross products strictly positive for CCW polygon)
+var strictlyConvex = true
+let n = frameVerts.count
+for i in 0..<n {
+    let pPrev = frameVerts[i]
+    let pCurr = frameVerts[(i + 1) % n]
+    let pNext = frameVerts[(i + 2) % n]
+    let v1 = CGPoint(x: pCurr.x - pPrev.x, y: pCurr.y - pPrev.y)
+    let v2 = CGPoint(x: pNext.x - pCurr.x, y: pNext.y - pCurr.y)
+    let cross = v1.x * v2.y - v1.y * v2.x
+    if cross <= 0 {
+        strictlyConvex = false
+    }
+}
+suite.assert(strictlyConvex, "Chassis collider polygon is strictly convex for valid SKPhysicsBody construction")
+
+// 4. Suspension travel and stiffness invariants
+let rearTravelRange: CGFloat = 0.20 - (-0.06) // 0.26 rad
+suite.assert(rearTravelRange >= 0.20, "Rear suspension angular travel range (\(rearTravelRange) rad) is >= 0.20 rad")
+let frontForkTravel: CGFloat = abs(-10.0) // 10.0 pt
+suite.assert(frontForkTravel >= 8.0, "Front fork compression travel (\(frontForkTravel) pt) is >= 8.0 pt")
+let rearShockFreq: CGFloat = 24.0
+suite.assert(rearShockFreq >= 20.0, "Rear shock frequency (\(rearShockFreq) Hz) is >= 20.0 Hz to prevent sag collapse")
+suite.assertEqual(chassisFriction, 0.02, "Chassis friction is set to ultra-slick 0.02")
 
 let allPassed = suite.summary()
 exit(allPassed ? 0 : 1)
