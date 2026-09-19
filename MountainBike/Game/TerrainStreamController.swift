@@ -331,9 +331,14 @@ final class TerrainStreamController {
     /// chunk is immutable once installed, so no edge chain is ever replaced
     /// beneath a moving bike.
     func ensureTerrainAhead(of positionX: CGFloat) {
+        guard positionX.isFinite else { return }
         let targetX = positionX + GameTuning.Terrain.streamAheadDistance
-        while levelEndX < targetX {
+        var chunksAppended = 0
+        while levelEndX < targetX && chunksAppended < 30 {
+            let previousEndX = levelEndX
             appendTerrainChunk()
+            chunksAppended += 1
+            if levelEndX <= previousEndX { break }
         }
     }
 
@@ -357,10 +362,12 @@ final class TerrainStreamController {
         isTouching: (Set<ObjectIdentifier>) -> Bool,
         forgetBody: (ObjectIdentifier) -> Void
     ) {
+        guard positionX.isFinite else { return }
         let retirementX = positionX - GameTuning.Terrain.streamRetirementDistance
         var retiredAny = false
+        var chunksRetired = 0
 
-        while let oldestChunk = terrainChunks.first, oldestChunk.endX < retirementX {
+        while let oldestChunk = terrainChunks.first, oldestChunk.endX < retirementX && chunksRetired < 30 {
             guard !isTouching(oldestChunk.terrainBodyIDs) else { break }
 
             terrainChunks.removeFirst()
@@ -369,6 +376,7 @@ final class TerrainStreamController {
             oldestChunk.node.removeFromParent()
             oldestChunk.sceneryNode.removeFromParent()
             retiredAny = true
+            chunksRetired += 1
         }
 
         if retiredAny {
@@ -1248,6 +1256,7 @@ final class TerrainStreamController {
     /// run in this controller is by construction. Returns `points.count` if
     /// every point's x is less than `x`.
     private func firstPointIndex(in points: [CGPoint], atOrAfter x: CGFloat) -> Int {
+        guard x.isFinite else { return 0 }
         var low = 0
         var high = points.count
         while low < high {
@@ -1266,6 +1275,7 @@ final class TerrainStreamController {
     /// this always lands on the chunk that would contain `x`, if any chunk
     /// still does.
     private func firstChunkIndex(atOrAfter x: CGFloat) -> Int {
+        guard x.isFinite else { return 0 }
         var low = 0
         var high = terrainChunks.count
         while low < high {

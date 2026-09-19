@@ -53,9 +53,14 @@ func hermiteY(start: CGPoint, end: CGPoint, startSlope: CGFloat, endSlope: CGFlo
 }
 
 func normalizedAngle(_ angle: CGFloat) -> CGFloat {
-    var result = angle
-    while result > .pi { result -= .pi * 2 }
-    while result < -.pi { result += .pi * 2 }
+    guard angle.isFinite else { return 0 }
+    let twoPi = CGFloat.pi * 2
+    var result = angle.truncatingRemainder(dividingBy: twoPi)
+    if result > .pi {
+        result -= twoPi
+    } else if result < -.pi {
+        result += twoPi
+    }
     return result
 }
 
@@ -112,6 +117,9 @@ suite.assertNear(normalizedAngle(-5 * .pi), -.pi, "-5*pi normalizes to -pi")
 suite.assertNear(normalizedAngle(.pi * 0.5), .pi * 0.5, "pi/2 preserves exact quadrant")
 suite.assertNear(normalizedAngle(-.pi * 0.5), -.pi * 0.5, "-pi/2 preserves exact quadrant")
 suite.assertNear(normalizedAngle(2.5 * .pi), .pi * 0.5, "2.5*pi wraps to pi/2")
+suite.assertEqual(normalizedAngle(.infinity), 0, "Infinity angle safely normalizes to 0 without infinite loop")
+suite.assertEqual(normalizedAngle(-.infinity), 0, "-Infinity angle safely normalizes to 0 without infinite loop")
+suite.assertEqual(normalizedAngle(.nan), 0, "NaN angle safely normalizes to 0 without hang")
 
 // Test 3: Spawn Clearance Calculations
 print("\n• Test Group 3: Spawn Clearance & Safe Attitude")

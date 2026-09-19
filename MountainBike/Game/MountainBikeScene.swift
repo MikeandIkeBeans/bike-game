@@ -270,8 +270,10 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             // ever places the chassis >25 units beneath the terrain line while NOT grounded,
             // immediately rescue the bike back onto the trail with preserved momentum.
             let chassisX = bike.chassisPosition.x
+            let chassisY = bike.chassisPosition.y
+            guard chassisX.isFinite, chassisY.isFinite else { return }
             let terrainY = terrainStream.surfaceTerrainHeight(at: chassisX) ?? terrainStream.terrainHeight(at: chassisX)
-            if !isGrounded && bike.chassisPosition.y < terrainY - 25 {
+            if !isGrounded && chassisY < terrainY - 25 {
                 let attitude = terrainStream.supportAngle(at: chassisX)
                 let safeY = terrainY + bike.spawnClearance(for: attitude) + 2.0
                 let currentSpeed = max(bike.velocity.dx, 150)
@@ -283,7 +285,6 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             elapsedRunTime += frameDelta
             bike.updateVisuals(deltaTime: frameDelta, leanInput: leanInput, pedalHeld: pedalHeld)
             capVehicleMotion()
-            redirectTransitionMomentum()
             updateAirborneAndLandingState()
             evaluateRunState()
             commitPendingCrashIfNeeded()
@@ -444,43 +445,6 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         }
     }
 
-    /// In sharp upward transitions (such as jump launch scoops), normal collision
-    /// forces into segmented polygon vertices absorb forward momentum and trigger
-    /// violent pitch-stops. This smoothly aligns velocity with the climb tangent while
-    /// preserving, but never exceeding, current total kinetic speed.
-    private func redirectTransitionMomentum() {
-        guard isGrounded, let tangent = pedalSupportTangent(), tangent.dx > 0.1 else { return }
-        let currentSpeed = hypot(bike.velocity.dx, bike.velocity.dy)
-        guard currentSpeed > 60 else { return }
-
-        let normal = CGVector(dx: -tangent.dy, dy: tangent.dx)
-        let normalVelocity = bike.velocity.dx * normal.dx + bike.velocity.dy * normal.dy
-        guard normalVelocity < -10 else { return }
-
-        let maxClimbDy: CGFloat = 0.48
-        let climbDy = min(tangent.dy, maxClimbDy)
-        let climbDx = sqrt(max(0.01, 1.0 - climbDy * climbDy))
-
-        let targetVx = climbDx * currentSpeed
-        let targetVy = climbDy * currentSpeed
-
-        let blend: CGFloat = min(CGFloat(frameDelta) * 25.0, 0.80)
-        var newVx = bike.velocity.dx * (1 - blend) + targetVx * blend
-        var newVy = bike.velocity.dy * (1 - blend) + targetVy * blend
-
-        let newSpeed = hypot(newVx, newVy)
-        if newSpeed > currentSpeed && newSpeed > 0 {
-            let scale = currentSpeed / newSpeed
-            newVx *= scale
-            newVy *= scale
-        }
-
-        let newVelocity = CGVector(dx: newVx, dy: newVy)
-        for body in bike.allBodies {
-            body.velocity = newVelocity
-        }
-    }
-
     private func updateAirborneAndLandingState() {
         let currentlyGrounded = isGrounded
         if !currentlyGrounded {
@@ -518,10 +482,13 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
 
     private func evaluateRunState() {
         guard runState == .riding else { return }
-        let hasLeftStart = bike.chassisPosition.x >= GameTuning.Bike.spawnX + GameTuning.Crash.minimumTravelBeforeCrashChecks
+        let chassisX = bike.chassisPosition.x
+        let chassisY = bike.chassisPosition.y
+        guard chassisX.isFinite, chassisY.isFinite else { return }
+        let hasLeftStart = chassisX >= GameTuning.Bike.spawnX + GameTuning.Crash.minimumTravelBeforeCrashChecks
 
         if elapsedRunTime >= GameTuning.Crash.spawnGrace, hasLeftStart {
-            let supportAngle = terrainStream.supportAngle(at: bike.chassisPosition.x)
+            let supportAngle = terrainStream.supportAngle(at: chassisX)
             let relativePitch = normalizedAngle(bike.chassisRotation - supportAngle)
 
             if isGrounded && abs(relativePitch) >= GameTuning.Crash.maximumRelativeLeanAngle {
@@ -533,7 +500,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             }
         }
 
-        if bike.chassisPosition.y < terrainStream.terrainHeight(at: bike.chassisPosition.x) - GameTuning.Crash.fallBelowTerrainDistance {
+        if chassisY < terrainStream.terrainHeight(at: chassisX) - GameTuning.Crash.fallBelowTerrainDistance {
             requestCrash(.fell)
         }
     }
@@ -1196,9 +1163,14 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func normalizedAngle(_ angle: CGFloat) -> CGFloat {
-        var result = angle
-        while result > .pi { result -= .pi * 2 }
-        while result < -.pi { result += .pi * 2 }
+        guard angle.isFinite else { return 0 }
+        let twoPi = CGFloat.pi * 2
+        var result = angle.truncatingRemainder(dividingBy: twoPi)
+        if result > .pi {
+            result -= twoPi
+        } else if result < -.pi {
+            result += twoPi
+        }
         return result
     }
 }
