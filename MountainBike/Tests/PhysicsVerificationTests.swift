@@ -690,19 +690,28 @@ let extremeApexHeight = (extremeLaunchVy * extremeLaunchVy) / (2.0 * g)
 suite.assert(extremeApexTime < 5.0, "Extreme launch reaches apex within 5.0s (eliminates space launch bug): \(extremeApexTime)s")
 suite.assert(extremeApexHeight < 1500.0, "Extreme launch apex is bounded by physics (< 1500 pt): \(extremeApexHeight) pt")
 
-// 6. Frame strike crash detection: chassis touching terrain only crashes when pitched severely (>= 49° / 0.85 rad)
-func evaluateFrameCrash(chassisContact: Bool, pitch: CGFloat) -> Bool {
-    return chassisContact && abs(pitch) >= 0.85
+// 6. Trail-relative pitch crash detection: chassis touching terrain only crashes when pitched severely relative to trail slope
+func evaluateRunCrash(isGrounded: Bool, chassisContact: Bool, chassisRotation: CGFloat, supportAngle: CGFloat) -> (lostControl: Bool, frameStrike: Bool) {
+    let relativePitch = normalizedAngle(chassisRotation - supportAngle)
+    let lostControl = isGrounded && abs(relativePitch) >= (CGFloat.pi * 0.50)
+    let frameStrike = chassisContact && abs(relativePitch) >= 0.85
+    return (lostControl, frameStrike)
 }
 
-let uprightScrapeCrash = evaluateFrameCrash(chassisContact: true, pitch: 0.10) // 5.7 deg pitch
-suite.assert(!uprightScrapeCrash, "Upright chassis scrape during suspension compression does NOT cause false crash")
+let flatScrape = evaluateRunCrash(isGrounded: true, chassisContact: true, chassisRotation: 0.10, supportAngle: 0.0)
+suite.assert(!flatScrape.frameStrike && !flatScrape.lostControl, "Upright chassis scrape during suspension compression does NOT cause false crash")
 
-let noseDiveCrash = evaluateFrameCrash(chassisContact: true, pitch: -0.92) // 52.7 deg nose-dive
-suite.assert(noseDiveCrash, "Severe nose-dive frame strike (>= 0.85 rad) correctly triggers crash")
+let downhillAligned = evaluateRunCrash(isGrounded: true, chassisContact: true, chassisRotation: -0.785, supportAngle: -0.785)
+suite.assert(!downhillAligned.frameStrike && !downhillAligned.lostControl, "Riding steep 45° downhill aligned with slope does NOT cause false crash")
 
-let loopOutCrash = evaluateFrameCrash(chassisContact: true, pitch: 0.88) // 50.4 deg loop out
-suite.assert(loopOutCrash, "Severe loop-out frame strike (>= 0.85 rad) correctly triggers crash")
+let airborneInverted = evaluateRunCrash(isGrounded: false, chassisContact: false, chassisRotation: .pi, supportAngle: 0.0)
+suite.assert(!airborneInverted.lostControl && !airborneInverted.frameStrike, "Mid-air inversion does NOT cause false crash")
+
+let severeNoseDive = evaluateRunCrash(isGrounded: true, chassisContact: true, chassisRotation: -0.92, supportAngle: 0.0)
+suite.assert(severeNoseDive.frameStrike, "Severe nose-dive frame strike (>= 0.85 rad) correctly triggers crash")
+
+let severeLoopOut = evaluateRunCrash(isGrounded: true, chassisContact: true, chassisRotation: 0.88, supportAngle: 0.0)
+suite.assert(severeLoopOut.frameStrike, "Severe loop-out frame strike (>= 0.85 rad) correctly triggers crash")
 
 // 7. Braking deceleration: leaning back grounded decelerates bike along trail tangent
 func simulateBraking(velocity: CGVector, tangent: CGVector, delta: TimeInterval = 0.016) -> CGVector {
@@ -721,6 +730,46 @@ let fastVel = CGVector(dx: 500.0, dy: 0.0)
 let flatTangent = CGVector(dx: 1.0, dy: 0.0)
 let brakedVel = simulateBraking(velocity: fastVel, tangent: flatTangent)
 suite.assert(brakedVel.dx < fastVel.dx, "Braking decelerates forward speed: \(fastVel.dx) -> \(brakedVel.dx)")
+
+// 8. Transition momentum redirection: smooth climb velocity alignment with energy conservation
+func simulateTransitionRedirection(velocity: CGVector, tangent: CGVector, isGrounded: Bool, delta: TimeInterval = 0.016) -> CGVector {
+    guard isGrounded, tangent.dx > 0.1 else { return velocity }
+    let currentSpeed = hypot(velocity.dx, velocity.dy)
+    guard currentSpeed > 60 else { return velocity }
+
+    let normal = CGVector(dx: -tangent.dy, dy: tangent.dx)
+    let normalVelocity = velocity.dx * normal.dx + velocity.dy * normal.dy
+    guard normalVelocity < -10 else { return velocity }
+
+    let maxClimbDy: CGFloat = 0.48
+    let climbDy = min(tangent.dy, maxClimbDy)
+    let climbDx = sqrt(max(0.01, 1.0 - climbDy * climbDy))
+
+    let targetVx = climbDx * currentSpeed
+    let targetVy = climbDy * currentSpeed
+
+    let blend: CGFloat = min(CGFloat(delta) * 25.0, 0.80)
+    var newVx = velocity.dx * (1 - blend) + targetVx * blend
+    var newVy = velocity.dy * (1 - blend) + targetVy * blend
+
+    let newSpeed = hypot(newVx, newVy)
+    if newSpeed > currentSpeed && newSpeed > 0 {
+        let scale = currentSpeed / newSpeed
+        newVx *= scale
+        newVy *= scale
+    }
+    return CGVector(dx: newVx, dy: newVy)
+}
+
+// Entering a transition ramp (tangent dy = 0.45, dx = 0.893) at 800 pt/s downhill (vy = -200, vx = 774)
+let scoopTangent = CGVector(dx: 0.893, dy: 0.450)
+let scoopInVel = CGVector(dx: 774.0, dy: -200.0)
+let inSpeed = hypot(scoopInVel.dx, scoopInVel.dy)
+let redirectedVel = simulateTransitionRedirection(velocity: scoopInVel, tangent: scoopTangent, isGrounded: true)
+let outSpeed = hypot(redirectedVel.dx, redirectedVel.dy)
+
+suite.assert(redirectedVel.dy > scoopInVel.dy, "Transition scoop redirects velocity upward: \(scoopInVel.dy) -> \(redirectedVel.dy)")
+suite.assert(outSpeed <= inSpeed + 0.01, "Transition redirection strictly conserves kinetic energy (no free speed): \(outSpeed) <= \(inSpeed)")
 
 // Test 15: Uphill Pedal Traction & Anti-Rollback Ratchet Invariants
 print("\n• Test Group 15: Uphill Pedal Traction & Anti-Rollback Ratchet Invariants")

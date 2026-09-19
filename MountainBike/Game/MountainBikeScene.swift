@@ -141,8 +141,6 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     private var keyboardBackHeld = false
     private var keyboardForwardHeld = false
     private var keyboardPedalHeld = false
-    private var previousAirborneAngle: CGFloat?
-    private var airborneRotation: CGFloat = 0
     private var wasGrounded = true
     private var airborneTime: TimeInterval = 0
     private var airborneStartX: CGFloat = 0
@@ -285,7 +283,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             elapsedRunTime += frameDelta
             bike.updateVisuals(deltaTime: frameDelta, leanInput: leanInput, pedalHeld: pedalHeld)
             capVehicleMotion()
-            updateAirborneRotation()
+            redirectTransitionMomentum()
             updateAirborneAndLandingState()
             evaluateRunState()
             commitPendingCrashIfNeeded()
@@ -446,19 +444,41 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         }
     }
 
-    private func updateAirborneRotation() {
-        guard !isGrounded else {
-            previousAirborneAngle = nil
-            airborneRotation = 0
-            return
+    /// In sharp upward transitions (such as jump launch scoops), normal collision
+    /// forces into segmented polygon vertices absorb forward momentum and trigger
+    /// violent pitch-stops. This smoothly aligns velocity with the climb tangent while
+    /// preserving, but never exceeding, current total kinetic speed.
+    private func redirectTransitionMomentum() {
+        guard isGrounded, let tangent = pedalSupportTangent(), tangent.dx > 0.1 else { return }
+        let currentSpeed = hypot(bike.velocity.dx, bike.velocity.dy)
+        guard currentSpeed > 60 else { return }
+
+        let normal = CGVector(dx: -tangent.dy, dy: tangent.dx)
+        let normalVelocity = bike.velocity.dx * normal.dx + bike.velocity.dy * normal.dy
+        guard normalVelocity < -10 else { return }
+
+        let maxClimbDy: CGFloat = 0.48
+        let climbDy = min(tangent.dy, maxClimbDy)
+        let climbDx = sqrt(max(0.01, 1.0 - climbDy * climbDy))
+
+        let targetVx = climbDx * currentSpeed
+        let targetVy = climbDy * currentSpeed
+
+        let blend: CGFloat = min(CGFloat(frameDelta) * 25.0, 0.80)
+        var newVx = bike.velocity.dx * (1 - blend) + targetVx * blend
+        var newVy = bike.velocity.dy * (1 - blend) + targetVy * blend
+
+        let newSpeed = hypot(newVx, newVy)
+        if newSpeed > currentSpeed && newSpeed > 0 {
+            let scale = currentSpeed / newSpeed
+            newVx *= scale
+            newVy *= scale
         }
-        guard let previousAngle = previousAirborneAngle else {
-            previousAirborneAngle = bike.chassisRotation
-            airborneRotation = 0
-            return
+
+        let newVelocity = CGVector(dx: newVx, dy: newVy)
+        for body in bike.allBodies {
+            body.velocity = newVelocity
         }
-        airborneRotation += normalizedAngle(bike.chassisRotation - previousAngle)
-        previousAirborneAngle = bike.chassisRotation
     }
 
     private func updateAirborneAndLandingState() {
@@ -501,11 +521,14 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         let hasLeftStart = bike.chassisPosition.x >= GameTuning.Bike.spawnX + GameTuning.Crash.minimumTravelBeforeCrashChecks
 
         if elapsedRunTime >= GameTuning.Crash.spawnGrace, hasLeftStart {
-            if abs(airborneRotation) >= GameTuning.Crash.maximumAirborneRotation || abs(bike.chassisRotation) >= GameTuning.Crash.maximumRelativeLeanAngle {
+            let supportAngle = terrainStream.supportAngle(at: bike.chassisPosition.x)
+            let relativePitch = normalizedAngle(bike.chassisRotation - supportAngle)
+
+            if isGrounded && abs(relativePitch) >= GameTuning.Crash.maximumRelativeLeanAngle {
                 requestCrash(.lostControl)
             }
             let frameContact = contacts.touches(bike.chassisBody)
-            if frameContact && abs(bike.chassisRotation) >= GameTuning.Crash.minimumFrameStrikePitch {
+            if frameContact && abs(relativePitch) >= GameTuning.Crash.minimumFrameStrikePitch {
                 requestCrash(.frameStrike)
             }
         }
@@ -559,8 +582,6 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         keyboardForwardHeld = false
         keyboardPedalHeld = false
         elapsedRunTime = 0
-        previousAirborneAngle = nil
-        airborneRotation = 0
         wasGrounded = true
         airborneTime = 0
         airborneStartX = 0
