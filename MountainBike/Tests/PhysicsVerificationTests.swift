@@ -575,7 +575,7 @@ struct MockPenetrationRecovery {
     var rescued = false
 
     let wheelRadius: CGFloat = 16.0
-    let frameGuardRadius: CGFloat = 10.0
+    let frameGuardRadius: CGFloat = 0.0
     let recoveryClearance: CGFloat = 1.0
     let trigger: CGFloat = 6.0
 
@@ -647,10 +647,10 @@ suite.assert(pr3.frontWheelY >= 117.0, "Subterranean front wheel restored above 
 suite.assertEqual(pr3.rearWheelVy, 0.0, "Subterranean rear downward velocity zeroed")
 suite.assertEqual(pr3.frontWheelVy, 0.0, "Subterranean front downward velocity zeroed")
 
-// 4. Chassis frame bottom-out penetration (min allowed is 100 + 10 = 110; current is 104)
-var pr4 = MockPenetrationRecovery(rearWheelY: 117, rearWheelVy: 0, frontWheelY: 117, frontWheelVy: 0, chassisY: 104, chassisVy: -250)
+// 4. Chassis frame bottom-out penetration (terrain is 100, trigger 6 -> subterranean chassis 93 <= 94)
+var pr4 = MockPenetrationRecovery(rearWheelY: 117, rearWheelVy: 0, frontWheelY: 117, frontWheelVy: 0, chassisY: 93, chassisVy: -250)
 pr4.recover(terrainY: 100)
-suite.assertEqual(pr4.chassisY, 111.0, "Chassis frame clamped to minChassisY + recoveryClearance (111.0)")
+suite.assertEqual(pr4.chassisY, 101.0, "Chassis frame clamped to minChassisY + recoveryClearance (101.0)")
 suite.assertEqual(pr4.chassisVy, 0.0, "Chassis downward velocity zeroed")
 
 // 5. Catastrophic tunneling rescue (>60 units below terrain)
@@ -713,7 +713,7 @@ suite.assert(extremeApexHeight < 1500.0, "Extreme launch apex is bounded by phys
 func evaluateRunCrash(isGrounded: Bool, chassisContact: Bool, chassisRotation: CGFloat, supportAngle: CGFloat) -> (lostControl: Bool, frameStrike: Bool) {
     let relativePitch = normalizedAngle(chassisRotation - supportAngle)
     let lostControl = isGrounded && abs(relativePitch) >= (CGFloat.pi * 0.50)
-    let frameStrike = chassisContact && abs(relativePitch) >= 0.85
+    let frameStrike = chassisContact && abs(relativePitch) >= 1.20
     return (lostControl, frameStrike)
 }
 
@@ -723,14 +723,17 @@ suite.assert(!flatScrape.frameStrike && !flatScrape.lostControl, "Upright chassi
 let downhillAligned = evaluateRunCrash(isGrounded: true, chassisContact: true, chassisRotation: -0.785, supportAngle: -0.785)
 suite.assert(!downhillAligned.frameStrike && !downhillAligned.lostControl, "Riding steep 45° downhill aligned with slope does NOT cause false crash")
 
+let uHillScrape = evaluateRunCrash(isGrounded: true, chassisContact: true, chassisRotation: 0.40, supportAngle: -0.50)
+suite.assert(!uHillScrape.frameStrike && !uHillScrape.lostControl, "Compression at bottom of U-hill (0.90 rad relative pitch) does NOT cause false crash")
+
 let airborneInverted = evaluateRunCrash(isGrounded: false, chassisContact: false, chassisRotation: .pi, supportAngle: 0.0)
 suite.assert(!airborneInverted.lostControl && !airborneInverted.frameStrike, "Mid-air inversion does NOT cause false crash")
 
-let severeNoseDive = evaluateRunCrash(isGrounded: true, chassisContact: true, chassisRotation: -0.92, supportAngle: 0.0)
-suite.assert(severeNoseDive.frameStrike, "Severe nose-dive frame strike (>= 0.85 rad) correctly triggers crash")
+let severeNoseDive = evaluateRunCrash(isGrounded: true, chassisContact: true, chassisRotation: -1.30, supportAngle: 0.0)
+suite.assert(severeNoseDive.frameStrike, "Severe nose-dive frame strike (>= 1.20 rad) correctly triggers crash")
 
-let severeLoopOut = evaluateRunCrash(isGrounded: true, chassisContact: true, chassisRotation: 0.88, supportAngle: 0.0)
-suite.assert(severeLoopOut.frameStrike, "Severe loop-out frame strike (>= 0.85 rad) correctly triggers crash")
+let severeLoopOut = evaluateRunCrash(isGrounded: true, chassisContact: true, chassisRotation: 1.30, supportAngle: 0.0)
+suite.assert(severeLoopOut.frameStrike, "Severe loop-out frame strike (>= 1.20 rad) correctly triggers crash")
 
 // 7. Braking deceleration: leaning back grounded applies backward force along trail tangent
 func simulateBraking(velocity: CGVector, tangent: CGVector, totalMass: CGFloat = 6.6, delta: TimeInterval = 0.016) -> CGVector {
@@ -987,13 +990,17 @@ for i in 0..<n {
 suite.assert(strictlyConvex, "Chassis collider polygon is strictly convex for valid SKPhysicsBody construction")
 
 // 4. Suspension travel and stiffness invariants
-let rearTravelRange: CGFloat = 0.20 - (-0.06) // 0.26 rad
+let rearTravelRange: CGFloat = 0.22 - (-0.06) // 0.28 rad
 suite.assert(rearTravelRange >= 0.20, "Rear suspension angular travel range (\(rearTravelRange) rad) is >= 0.20 rad")
-let frontForkTravel: CGFloat = abs(-10.0) // 10.0 pt
-suite.assert(frontForkTravel >= 8.0, "Front fork compression travel (\(frontForkTravel) pt) is >= 8.0 pt")
-let rearShockFreq: CGFloat = 24.0
-suite.assert(rearShockFreq >= 20.0, "Rear shock frequency (\(rearShockFreq) Hz) is >= 20.0 Hz to prevent sag collapse")
+let frontForkTravel: CGFloat = abs(-12.0) // 12.0 pt
+suite.assert(frontForkTravel >= 10.0, "Front fork compression travel (\(frontForkTravel) pt) is >= 10.0 pt")
+let rearShockFreq: CGFloat = 28.0
+suite.assert(rearShockFreq >= 24.0, "Rear shock frequency (\(rearShockFreq) Hz) is >= 24.0 Hz to prevent U-hill bottom-out")
 suite.assertEqual(chassisFriction, 0.02, "Chassis friction is set to ultra-slick 0.02")
+
+// 5. Rollable trough transition invariant
+let minRampLen: CGFloat = 130
+suite.assert(minRampLen >= 120, "Trough transition ramp length (\(minRampLen) pt) provides smooth, rollable U-hill exit")
 
 let allPassed = suite.summary()
 exit(allPassed ? 0 : 1)

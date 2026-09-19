@@ -122,7 +122,7 @@ enum GameTuning {
         /// vertical tangent. Normal course slopes stay well above this value.
         static let minimumSpawnCosine: CGFloat = 0.35
         static let startVelocity = CGVector.zero
-        static let frameGuardRadius: CGFloat = 10
+        static let frameGuardRadius: CGFloat = 0
         static let frameGuardOffsetY: CGFloat = 0
 
         /// Mass and damping for the multi-body suspension bike chassis.
@@ -143,18 +143,18 @@ enum GameTuning {
         static let rearAxleLocal = CGPoint(x: -25, y: -14)
         /// Travel stops, joint friction, and spring rates for the rear shock.
         static let lowerTravelAngle: CGFloat = -0.06
-        static let upperTravelAngle: CGFloat = 0.20
+        static let upperTravelAngle: CGFloat = 0.22
         static let pivotFrictionTorque: CGFloat = 1.50
-        static let springFrequency: CGFloat = 24.0
-        static let springDamping: CGFloat = 0.80
+        static let springFrequency: CGFloat = 28.0
+        static let springDamping: CGFloat = 0.85
         static let topOutStrapExtraLength: CGFloat = 0.2
         /// Live telescoping front fork suspension masses, damping, and travel limits.
         static let frontForkMass: CGFloat = 0.50
         static let frontForkAngularDamping: CGFloat = 1.20
         static let frontForkAxis = CGVector(dx: -0.414, dy: 0.910)
-        static let frontSpringFrequency: CGFloat = 26.0
-        static let frontSpringDamping: CGFloat = 0.80
-        static let frontLowerTravelLimit: CGFloat = -10.0
+        static let frontSpringFrequency: CGFloat = 28.0
+        static let frontSpringDamping: CGFloat = 0.85
+        static let frontLowerTravelLimit: CGFloat = -12.0
         static let frontUpperTravelLimit: CGFloat = 0.0
         /// Low chassis and swingarm friction prevents abrasive drag when compressing in scoops.
         /// High tire friction provides traction for wheel drive and climbing.
@@ -206,7 +206,7 @@ enum GameTuning {
         static let maximumContinuousCliffSlope: CGFloat = 0.82
         /// Generated trough exits must have enough horizontal room for a bike
         /// to roll out instead of becoming a divot with a near-vertical wall.
-        static let minimumRollableRampLength: CGFloat = 78
+        static let minimumRollableRampLength: CGFloat = 130
         static let maximumRollableUphillSlope: CGFloat = 0.54
         static let maximumUphillSlopeSwingPerLength: CGFloat = 0.02
         /// The final part of each takeoff is a smooth, rising arc rather than
@@ -582,7 +582,7 @@ enum GameTuning {
         static let spawnGrace: TimeInterval = 1.6
         static let minimumTravelBeforeCrashChecks: CGFloat = 90
         static let maximumRelativeLeanAngle: CGFloat = .pi * 0.50
-        static let minimumFrameStrikePitch: CGFloat = 0.85
+        static let minimumFrameStrikePitch: CGFloat = 1.20
         static let fallBelowTerrainDistance: CGFloat = 360
     }
 
