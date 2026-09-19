@@ -184,6 +184,11 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             || axleClearance(at: bike.frontAxlePosition) != nil
     }
 
+    private var areBothWheelsGrounded: Bool {
+        axleClearance(at: bike.rearAxlePosition) != nil
+            && axleClearance(at: bike.frontAxlePosition) != nil
+    }
+
     private func axleClearance(at axlePosition: CGPoint) -> CGFloat? {
         guard let terrainY = terrainStream.surfaceTerrainHeight(at: axlePosition.x) else {
             return nil
@@ -502,7 +507,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
                 requestCrash(.lostControl)
             }
             let frameContact = contacts.touches(bike.chassisBody)
-            if frameContact && abs(relativePitch) >= GameTuning.Crash.minimumFrameStrikePitch {
+            if frameContact && !areBothWheelsGrounded && abs(relativePitch) >= GameTuning.Crash.minimumFrameStrikePitch {
                 requestCrash(.frameStrike)
             }
         }

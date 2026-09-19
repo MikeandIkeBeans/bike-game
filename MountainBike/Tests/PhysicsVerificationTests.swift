@@ -709,30 +709,30 @@ let extremeApexHeight = (extremeLaunchVy * extremeLaunchVy) / (2.0 * g)
 suite.assert(extremeApexTime < 5.0, "Extreme launch reaches apex within 5.0s (eliminates space launch bug): \(extremeApexTime)s")
 suite.assert(extremeApexHeight < 1500.0, "Extreme launch apex is bounded by physics (< 1500 pt): \(extremeApexHeight) pt")
 
-// 6. Trail-relative pitch crash detection: chassis touching terrain only crashes when pitched severely relative to trail slope
-func evaluateRunCrash(isGrounded: Bool, chassisContact: Bool, chassisRotation: CGFloat, supportAngle: CGFloat) -> (lostControl: Bool, frameStrike: Bool) {
+// 6. Trail-relative pitch crash detection: chassis touching terrain only crashes when pitched severely relative to trail slope and not grounded on both wheels
+func evaluateRunCrash(bothWheelsGrounded: Bool = false, isGrounded: Bool, chassisContact: Bool, chassisRotation: CGFloat, supportAngle: CGFloat) -> (lostControl: Bool, frameStrike: Bool) {
     let relativePitch = normalizedAngle(chassisRotation - supportAngle)
     let lostControl = isGrounded && abs(relativePitch) >= (CGFloat.pi * 0.50)
-    let frameStrike = chassisContact && abs(relativePitch) >= 1.20
+    let frameStrike = chassisContact && !bothWheelsGrounded && abs(relativePitch) >= 1.20
     return (lostControl, frameStrike)
 }
 
-let flatScrape = evaluateRunCrash(isGrounded: true, chassisContact: true, chassisRotation: 0.10, supportAngle: 0.0)
+let flatScrape = evaluateRunCrash(bothWheelsGrounded: true, isGrounded: true, chassisContact: true, chassisRotation: 0.10, supportAngle: 0.0)
 suite.assert(!flatScrape.frameStrike && !flatScrape.lostControl, "Upright chassis scrape during suspension compression does NOT cause false crash")
 
-let downhillAligned = evaluateRunCrash(isGrounded: true, chassisContact: true, chassisRotation: -0.785, supportAngle: -0.785)
+let downhillAligned = evaluateRunCrash(bothWheelsGrounded: true, isGrounded: true, chassisContact: true, chassisRotation: -0.785, supportAngle: -0.785)
 suite.assert(!downhillAligned.frameStrike && !downhillAligned.lostControl, "Riding steep 45° downhill aligned with slope does NOT cause false crash")
 
-let uHillScrape = evaluateRunCrash(isGrounded: true, chassisContact: true, chassisRotation: 0.40, supportAngle: -0.50)
+let uHillScrape = evaluateRunCrash(bothWheelsGrounded: true, isGrounded: true, chassisContact: true, chassisRotation: 0.40, supportAngle: -0.50)
 suite.assert(!uHillScrape.frameStrike && !uHillScrape.lostControl, "Compression at bottom of U-hill (0.90 rad relative pitch) does NOT cause false crash")
 
-let airborneInverted = evaluateRunCrash(isGrounded: false, chassisContact: false, chassisRotation: .pi, supportAngle: 0.0)
+let airborneInverted = evaluateRunCrash(bothWheelsGrounded: false, isGrounded: false, chassisContact: false, chassisRotation: .pi, supportAngle: 0.0)
 suite.assert(!airborneInverted.lostControl && !airborneInverted.frameStrike, "Mid-air inversion does NOT cause false crash")
 
-let severeNoseDive = evaluateRunCrash(isGrounded: true, chassisContact: true, chassisRotation: -1.30, supportAngle: 0.0)
+let severeNoseDive = evaluateRunCrash(bothWheelsGrounded: false, isGrounded: true, chassisContact: true, chassisRotation: -1.30, supportAngle: 0.0)
 suite.assert(severeNoseDive.frameStrike, "Severe nose-dive frame strike (>= 1.20 rad) correctly triggers crash")
 
-let severeLoopOut = evaluateRunCrash(isGrounded: true, chassisContact: true, chassisRotation: 1.30, supportAngle: 0.0)
+let severeLoopOut = evaluateRunCrash(bothWheelsGrounded: false, isGrounded: true, chassisContact: true, chassisRotation: 1.30, supportAngle: 0.0)
 suite.assert(severeLoopOut.frameStrike, "Severe loop-out frame strike (>= 1.20 rad) correctly triggers crash")
 
 // 7. Braking deceleration: leaning back grounded applies backward force along trail tangent
@@ -872,7 +872,7 @@ func testMakeMegaJumpChunk(index: Int) -> [TestSegment] {
     let cycle = index / 5
     let phase = index % 5
     let ox = CGFloat(cycle) * 11590.0
-    let oy = CGFloat(cycle) * -6200.0
+    let oy = CGFloat(cycle) * -5575.6
 
     switch phase {
     case 0:
@@ -883,24 +883,24 @@ func testMakeMegaJumpChunk(index: Int) -> [TestSegment] {
         ]
     case 1:
         return [
-            TestSegment(start: CGPoint(x: 1760 + ox, y: -420 + oy), end: CGPoint(x: 3260 + ox, y: -1920 + oy), startSlope: -1.0, endSlope: -1.0),
-            TestSegment(start: CGPoint(x: 3260 + ox, y: -1920 + oy), end: CGPoint(x: 3660 + ox, y: -2080 + oy), startSlope: -1.0, endSlope: 0.0),
-            TestSegment(start: CGPoint(x: 3660 + ox, y: -2080 + oy), end: CGPoint(x: 3860 + ox, y: -2030 + oy), startSlope: 0.0, endSlope: 0.48),
-            TestSegment(start: CGPoint(x: 3860 + ox, y: -2030 + oy), end: CGPoint(x: 3990 + ox, y: -1968 + oy), startSlope: 0.48, endSlope: 0.48),
-            TestSegment(start: CGPoint(x: 3990 + ox, y: -1968 + oy), end: CGPoint(x: 4110 + ox, y: -1975 + oy), startSlope: 0.48, endSlope: -0.55)
+            TestSegment(start: CGPoint(x: 1760 + ox, y: -420 + oy), end: CGPoint(x: 2360 + ox, y: -1020 + oy), startSlope: -1.0, endSlope: -1.0),
+            TestSegment(start: CGPoint(x: 2360 + ox, y: -1020 + oy), end: CGPoint(x: 3360 + ox, y: -1520 + oy), startSlope: -1.0, endSlope: 0.0),
+            TestSegment(start: CGPoint(x: 3360 + ox, y: -1520 + oy), end: CGPoint(x: 3860 + ox, y: -1405 + oy), startSlope: 0.0, endSlope: 0.46),
+            TestSegment(start: CGPoint(x: 3860 + ox, y: -1405 + oy), end: CGPoint(x: 3990 + ox, y: -1345.2 + oy), startSlope: 0.46, endSlope: 0.46),
+            TestSegment(start: CGPoint(x: 3990 + ox, y: -1345.2 + oy), end: CGPoint(x: 4110 + ox, y: -1350.6 + oy), startSlope: 0.46, endSlope: -0.55)
         ]
     case 2:
         return [
-            TestSegment(start: CGPoint(x: 4110 + ox, y: -1975 + oy), end: CGPoint(x: 6610 + ox, y: -3350 + oy), startSlope: -0.55, endSlope: -0.55)
+            TestSegment(start: CGPoint(x: 4110 + ox, y: -1350.6 + oy), end: CGPoint(x: 6610 + ox, y: -2725.6 + oy), startSlope: -0.55, endSlope: -0.55)
         ]
     case 3:
         return [
-            TestSegment(start: CGPoint(x: 6610 + ox, y: -3350 + oy), end: CGPoint(x: 9110 + ox, y: -4725 + oy), startSlope: -0.55, endSlope: -0.55)
+            TestSegment(start: CGPoint(x: 6610 + ox, y: -2725.6 + oy), end: CGPoint(x: 9110 + ox, y: -4100.6 + oy), startSlope: -0.55, endSlope: -0.55)
         ]
     case 4:
         return [
-            TestSegment(start: CGPoint(x: 9110 + ox, y: -4725 + oy), end: CGPoint(x: 10110 + ox, y: -5000 + oy), startSlope: -0.55, endSlope: 0.0),
-            TestSegment(start: CGPoint(x: 10110 + ox, y: -5000 + oy), end: CGPoint(x: 11110 + ox, y: -5000 + oy), startSlope: 0.0, endSlope: 0.0)
+            TestSegment(start: CGPoint(x: 9110 + ox, y: -4100.6 + oy), end: CGPoint(x: 10110 + ox, y: -4375.6 + oy), startSlope: -0.55, endSlope: 0.0),
+            TestSegment(start: CGPoint(x: 10110 + ox, y: -4375.6 + oy), end: CGPoint(x: 11110 + ox, y: -4375.6 + oy), startSlope: 0.0, endSlope: 0.0)
         ]
     default:
         return []
@@ -915,17 +915,17 @@ suite.assertEqual(chunk0[0].startSlope, 0.0, "Mega Jump spawn starting slope is 
 
 // 2. Downhill leadup length & steepness
 let leadupStart = chunk0[1].start.x // x = 20
-let leadupEnd = testMakeMegaJumpChunk(index: 1)[0].end.x // x = 3260
+let leadupEnd = testMakeMegaJumpChunk(index: 1)[0].end.x // x = 2360
 let leadupLength = leadupEnd - leadupStart
-suite.assert(leadupLength >= 3000.0, "Downhill leadup is massive: \(leadupLength) >= 3000 pt")
+suite.assert(leadupLength >= 2000.0, "Downhill leadup is massive: \(leadupLength) >= 2000 pt")
 suite.assertEqual(testMakeMegaJumpChunk(index: 1)[0].endSlope, -1.0, "Downhill leadup is steep 45-degree plunge (-1.0)")
 
 // 3. Launch ramp takeoff slope & elevation gain (short, fast, snappy)
 let chunk1 = testMakeMegaJumpChunk(index: 1)
 let launchSeg = chunk1[3] // snappy kicker ramp
-suite.assert(launchSeg.endSlope <= 0.50, "Launch ramp has fast, forward-launching angle: \(launchSeg.endSlope) <= 0.50 (~25.6°)")
-let rampGain = launchSeg.end.y - chunk1[1].end.y // y = -1968 - (-2080) = 112
-suite.assert(rampGain <= 150.0, "Launch ramp is short & snappy (does not hit a vertical wall): \(rampGain) <= 150 pt")
+suite.assert(launchSeg.endSlope <= 0.50, "Launch ramp has fast, forward-launching angle: \(launchSeg.endSlope) <= 0.50 (~24.7°)")
+let rampGain = launchSeg.end.y - chunk1[1].end.y // y = -1345.2 - (-1520) = 174.8
+suite.assert(rampGain <= 200.0, "Launch ramp is rollable & smooth (does not hit a vertical wall): \(rampGain) <= 200 pt")
 
 // 4. Landing catch runway length
 let chunk2 = testMakeMegaJumpChunk(index: 2)
@@ -990,17 +990,17 @@ for i in 0..<n {
 suite.assert(strictlyConvex, "Chassis collider polygon is strictly convex for valid SKPhysicsBody construction")
 
 // 4. Suspension travel and stiffness invariants
-let rearTravelRange: CGFloat = 0.22 - (-0.06) // 0.28 rad
-suite.assert(rearTravelRange >= 0.20, "Rear suspension angular travel range (\(rearTravelRange) rad) is >= 0.20 rad")
-let frontForkTravel: CGFloat = abs(-12.0) // 12.0 pt
-suite.assert(frontForkTravel >= 10.0, "Front fork compression travel (\(frontForkTravel) pt) is >= 10.0 pt")
-let rearShockFreq: CGFloat = 28.0
-suite.assert(rearShockFreq >= 24.0, "Rear shock frequency (\(rearShockFreq) Hz) is >= 24.0 Hz to prevent U-hill bottom-out")
+let rearTravelRange: CGFloat = 0.26 - (-0.06) // 0.32 rad
+suite.assert(rearTravelRange >= 0.25, "Rear suspension angular travel range (\(rearTravelRange) rad) is >= 0.25 rad")
+let frontForkTravel: CGFloat = abs(-14.0) // 14.0 pt
+suite.assert(frontForkTravel >= 12.0, "Front fork compression travel (\(frontForkTravel) pt) is >= 12.0 pt")
+let rearShockFreq: CGFloat = 30.0
+suite.assert(rearShockFreq >= 28.0, "Rear shock frequency (\(rearShockFreq) Hz) is >= 28.0 Hz to prevent U-hill bottom-out")
 suite.assertEqual(chassisFriction, 0.02, "Chassis friction is set to ultra-slick 0.02")
 
 // 5. Rollable trough transition invariant
-let minRampLen: CGFloat = 130
-suite.assert(minRampLen >= 120, "Trough transition ramp length (\(minRampLen) pt) provides smooth, rollable U-hill exit")
+let minRampLen: CGFloat = 200
+suite.assert(minRampLen >= 180, "Trough transition ramp length (\(minRampLen) pt) provides smooth, rollable U-hill exit")
 
 let allPassed = suite.summary()
 exit(allPassed ? 0 : 1)

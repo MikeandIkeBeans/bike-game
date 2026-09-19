@@ -143,18 +143,18 @@ enum GameTuning {
         static let rearAxleLocal = CGPoint(x: -25, y: -14)
         /// Travel stops, joint friction, and spring rates for the rear shock.
         static let lowerTravelAngle: CGFloat = -0.06
-        static let upperTravelAngle: CGFloat = 0.22
+        static let upperTravelAngle: CGFloat = 0.26
         static let pivotFrictionTorque: CGFloat = 1.50
-        static let springFrequency: CGFloat = 28.0
-        static let springDamping: CGFloat = 0.85
+        static let springFrequency: CGFloat = 30.0
+        static let springDamping: CGFloat = 0.90
         static let topOutStrapExtraLength: CGFloat = 0.2
         /// Live telescoping front fork suspension masses, damping, and travel limits.
         static let frontForkMass: CGFloat = 0.50
         static let frontForkAngularDamping: CGFloat = 1.20
         static let frontForkAxis = CGVector(dx: -0.414, dy: 0.910)
-        static let frontSpringFrequency: CGFloat = 28.0
-        static let frontSpringDamping: CGFloat = 0.85
-        static let frontLowerTravelLimit: CGFloat = -12.0
+        static let frontSpringFrequency: CGFloat = 30.0
+        static let frontSpringDamping: CGFloat = 0.90
+        static let frontLowerTravelLimit: CGFloat = -14.0
         static let frontUpperTravelLimit: CGFloat = 0.0
         /// Low chassis and swingarm friction prevents abrasive drag when compressing in scoops.
         /// High tire friction provides traction for wheel drive and climbing.
@@ -206,7 +206,7 @@ enum GameTuning {
         static let maximumContinuousCliffSlope: CGFloat = 0.82
         /// Generated trough exits must have enough horizontal room for a bike
         /// to roll out instead of becoming a divot with a near-vertical wall.
-        static let minimumRollableRampLength: CGFloat = 130
+        static let minimumRollableRampLength: CGFloat = 200
         static let maximumRollableUphillSlope: CGFloat = 0.54
         static let maximumUphillSlopeSwingPerLength: CGFloat = 0.02
         /// The final part of each takeoff is a smooth, rising arc rather than
@@ -517,30 +517,30 @@ enum GameTuning {
             secondSlope: -0.86 ... -0.36
         )
         static let lipProfile = DownhillLipProfile(
-            length: 360...500,
+            length: 600...800,
             drop: 235...335,
-            approachControlFraction: 0.18...0.24,
-            crestOffsetFraction: 0.16...0.22,
+            approachControlFraction: 0.28...0.34,
+            crestOffsetFraction: 0.26...0.32,
             approachDropFraction: 0.24...0.32,
             approachLengthDropFraction: 0.04...0.06,
-            climb: 42...58,
+            climb: 38...52,
             lipDrop: 130...180,
-            troughSlope: -0.18 ... -0.06,
-            crestSlope: 0.40...0.58
+            troughSlope: -0.12 ... -0.04,
+            crestSlope: 0.32...0.44
         )
         static let stepDownProfile = DownhillStepDownProfile(
-            length: 530...680,
+            length: 640...800,
             drop: 550...740,
-            approachControlFraction: 0.16...0.22,
+            approachControlFraction: 0.22...0.28,
             crestControlFraction: 0.30...0.36,
             cliffLengthFraction: 0.22...0.30,
             landingLengthFraction: 0.32...0.42,
             approachDropFraction: 0.10...0.16,
-            climb: 42...58,
+            climb: 38...50,
             cliffDropFraction: 0.22...0.30,
             landingDropFraction: 0.84...0.94,
-            troughSlope: -0.22 ... -0.07,
-            crestSlope: 0.40...0.58,
+            troughSlope: -0.14 ... -0.05,
+            crestSlope: 0.34...0.46,
             cliffSlope: -0.82 ... -0.58,
             landingSlope: -0.46 ... -0.22,
             exitSlope: -0.28 ... -0.14
