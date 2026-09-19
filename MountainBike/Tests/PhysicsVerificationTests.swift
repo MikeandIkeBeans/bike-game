@@ -721,17 +721,14 @@ suite.assert(severeNoseDive.frameStrike, "Severe nose-dive frame strike (>= 0.85
 let severeLoopOut = evaluateRunCrash(isGrounded: true, chassisContact: true, chassisRotation: 0.88, supportAngle: 0.0)
 suite.assert(severeLoopOut.frameStrike, "Severe loop-out frame strike (>= 0.85 rad) correctly triggers crash")
 
-// 7. Braking deceleration: leaning back grounded decelerates bike along trail tangent
-func simulateBraking(velocity: CGVector, tangent: CGVector, delta: TimeInterval = 0.016) -> CGVector {
+// 7. Braking deceleration: leaning back grounded applies backward force along trail tangent
+func simulateBraking(velocity: CGVector, tangent: CGVector, totalMass: CGFloat = 6.6, delta: TimeInterval = 0.016) -> CGVector {
     let alongTrail = velocity.dx * tangent.dx + velocity.dy * tangent.dy
-    let brakeDecel = CGFloat(delta) * 450.0
-    let targetSpeed = max(0, alongTrail - brakeDecel)
-    let targetVx = tangent.dx * targetSpeed
-    let targetVy = tangent.dy * targetSpeed
-    let blend = min(CGFloat(delta) * 16.0, 0.65)
-    let newVx = velocity.dx * (1 - blend) + targetVx * blend
-    let newVy = velocity.dy * (1 - blend) + targetVy * blend
-    return CGVector(dx: newVx, dy: newVy)
+    guard alongTrail > 20 else { return velocity }
+    let brakeForce: CGFloat = 1_800
+    let decel = (brakeForce / totalMass) * CGFloat(delta)
+    let newSpeed = max(0, alongTrail - decel)
+    return CGVector(dx: tangent.dx * newSpeed, dy: tangent.dy * newSpeed)
 }
 
 let fastVel = CGVector(dx: 500.0, dy: 0.0)

@@ -354,23 +354,28 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     /// Decelerates the bike along the trail tangent, decreases cached rolling momentum,
     /// and allows controlled speed management on technical trails.
     private func applyBraking() {
-        guard isGrounded, leanInput < 0, let tangent = pedalSupportTangent() else { return }
+        guard isGrounded, leanInput > 0, let tangent = pedalSupportTangent() else { return }
         let alongTrail = bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy
         guard alongTrail > 20 else { return }
 
-        // Progressive rear wheel braking deceleration (450 pt/s² ~ 100 km/h per second)
-        let brakeDecel = CGFloat(frameDelta) * 450.0
+        // Progressive rear wheel braking force applied smoothly across all bodies
+        let brakeForceMagnitude: CGFloat = 1_800
+        let forceVector = CGVector(
+            dx: -tangent.dx * brakeForceMagnitude,
+            dy: -tangent.dy * brakeForceMagnitude
+        )
+        let totalMass: CGFloat = GameTuning.Bike.chassisMass
+            + GameTuning.Bike.swingarmMass
+            + GameTuning.Bike.rearWheelMass
+            + GameTuning.Bike.frontForkMass
+            + GameTuning.Bike.frontWheelMass
 
-        let targetSpeed = max(0, alongTrail - brakeDecel)
-        let targetVx = tangent.dx * targetSpeed
-        let targetVy = tangent.dy * targetSpeed
-
-        let blend: CGFloat = min(CGFloat(frameDelta) * 16.0, 0.65)
-        let newVx = bike.velocity.dx * (1 - blend) + targetVx * blend
-        let newVy = bike.velocity.dy * (1 - blend) + targetVy * blend
-        let newVelocity = CGVector(dx: newVx, dy: newVy)
         for body in bike.allBodies {
-            body.velocity = newVelocity
+            let massFraction = body.mass / totalMass
+            body.applyForce(CGVector(
+                dx: forceVector.dx * massFraction,
+                dy: forceVector.dy * massFraction
+            ))
         }
 
         // Emit brake skid dust if braking at speed

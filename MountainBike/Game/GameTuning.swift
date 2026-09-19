@@ -128,7 +128,7 @@ enum GameTuning {
         /// Mass and damping for the multi-body suspension bike chassis.
         static let chassisMass: CGFloat = 3.4
         static let chassisLinearDamping: CGFloat = 0.002
-        static let chassisAngularDamping: CGFloat = 1.80
+        static let chassisAngularDamping: CGFloat = 2.40
         /// Multi-body live rear suspension masses and damping.
         static let swingarmMass: CGFloat = 1.00
         static let rearWheelMass: CGFloat = 1.00
@@ -162,7 +162,7 @@ enum GameTuning {
         static let tireFriction: CGFloat = 0.90
         static let restitution: CGFloat = 0.08
         static let maximumSpeed: CGFloat = 4_000
-        static let maximumChassisAngularVelocity: CGFloat = 5.0
+        static let maximumChassisAngularVelocity: CGFloat = 3.2
         static let groundedTolerance: CGFloat = 8
         /// A generous multiple of the bike's own resting size (wheels sit
         /// ~40 units from the chassis at rest). Past this, a body has not
@@ -573,8 +573,8 @@ enum GameTuning {
         static let pedalForce: CGFloat = 3_200
         static let pedalFadeSpeed: CGFloat = 1_200
         static let pedalClimbForce: CGFloat = 4_800
-        static let groundLeanTorque: CGFloat = 1_400
-        static let airLeanTorque: CGFloat = 1_100
+        static let groundLeanTorque: CGFloat = 90
+        static let airLeanTorque: CGFloat = 65
     }
 
     enum Crash {
