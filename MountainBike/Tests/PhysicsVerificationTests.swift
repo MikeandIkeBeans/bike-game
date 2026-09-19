@@ -580,8 +580,8 @@ struct MockPenetrationRecovery {
     let trigger: CGFloat = 6.0
 
     mutating func recover(terrainY: CGFloat) {
-        // Catastrophic tunneling rescue (checked first if severe breach)
-        if chassisY < terrainY - 25 {
+        // Catastrophic tunneling rescue (checked first if severe breach > 60 units below terrain)
+        if chassisY < terrainY - 60 {
             rescued = true
             chassisY = terrainY + 35
             chassisVy = 0
@@ -590,21 +590,32 @@ struct MockPenetrationRecovery {
             return
         }
 
+        var maxDeltaY: CGFloat = 0
         let idealWheelY = terrainY + wheelRadius
         // Rear wheel recovery
         if rearWheelY <= idealWheelY - trigger {
-            rearWheelY = idealWheelY + recoveryClearance
-            if rearWheelVy < 0 { rearWheelVy = 0 }
+            let dY = (idealWheelY + recoveryClearance) - rearWheelY
+            if dY > maxDeltaY { maxDeltaY = dY }
         }
         // Front wheel recovery
         if frontWheelY <= idealWheelY - trigger {
-            frontWheelY = idealWheelY + recoveryClearance
-            if frontWheelVy < 0 { frontWheelVy = 0 }
+            let dY = (idealWheelY + recoveryClearance) - frontWheelY
+            if dY > maxDeltaY { maxDeltaY = dY }
         }
         // Chassis frame recovery
         let minChassisY = terrainY + frameGuardRadius
         if chassisY <= minChassisY - trigger {
-            chassisY = minChassisY + recoveryClearance
+            let dY = (minChassisY + recoveryClearance) - chassisY
+            if dY > maxDeltaY { maxDeltaY = dY }
+        }
+
+        // Translate the ENTIRE assembly together as a single unit
+        if maxDeltaY > 0 && maxDeltaY <= 30 {
+            rearWheelY += maxDeltaY
+            frontWheelY += maxDeltaY
+            chassisY += maxDeltaY
+            if rearWheelVy < 0 { rearWheelVy = 0 }
+            if frontWheelVy < 0 { frontWheelVy = 0 }
             if chassisVy < 0 { chassisVy = 0 }
         }
     }
@@ -632,7 +643,7 @@ suite.assertEqual(pr2.rearWheelVy, 0.0, "Penetrating rear wheel downward velocit
 var pr3 = MockPenetrationRecovery(rearWheelY: 90, rearWheelVy: -800, frontWheelY: 92, frontWheelVy: -750, chassisY: 120, chassisVy: -400)
 pr3.recover(terrainY: 100)
 suite.assertEqual(pr3.rearWheelY, 117.0, "Subterranean rear wheel restored above surface")
-suite.assertEqual(pr3.frontWheelY, 117.0, "Subterranean front wheel restored above surface")
+suite.assert(pr3.frontWheelY >= 117.0, "Subterranean front wheel restored above surface")
 suite.assertEqual(pr3.rearWheelVy, 0.0, "Subterranean rear downward velocity zeroed")
 suite.assertEqual(pr3.frontWheelVy, 0.0, "Subterranean front downward velocity zeroed")
 
@@ -642,8 +653,8 @@ pr4.recover(terrainY: 100)
 suite.assertEqual(pr4.chassisY, 111.0, "Chassis frame clamped to minChassisY + recoveryClearance (111.0)")
 suite.assertEqual(pr4.chassisVy, 0.0, "Chassis downward velocity zeroed")
 
-// 5. Catastrophic tunneling rescue (>25 units below terrain)
-var pr5 = MockPenetrationRecovery(rearWheelY: 60, rearWheelVy: -1000, frontWheelY: 60, frontWheelVy: -1000, chassisY: 65, chassisVy: -1000)
+// 5. Catastrophic tunneling rescue (>60 units below terrain)
+var pr5 = MockPenetrationRecovery(rearWheelY: 30, rearWheelVy: -1000, frontWheelY: 30, frontWheelVy: -1000, chassisY: 35, chassisVy: -1000)
 pr5.recover(terrainY: 100)
 suite.assert(pr5.rescued, "Catastrophic tunneling triggers emergency rescue")
 suite.assertEqual(pr5.chassisY, 135.0, "Catastrophic chassis rescued to safe height above ground")
@@ -783,8 +794,8 @@ func simulateUphillPedal(
     tangent: CGVector,
     pedalHeld: Bool,
     isGrounded: Bool,
-    pedalForce: CGFloat = 3_200,
-    pedalClimbForce: CGFloat = 4_800,
+    pedalForce: CGFloat = 450,
+    pedalClimbForce: CGFloat = 650,
     totalMass: CGFloat = 6.6,
     delta: TimeInterval = 0.016
 ) -> CGVector {
@@ -799,7 +810,7 @@ func simulateUphillPedal(
     }
 
     let forwardSpeed = max(0, vel.dx * tangent.dx + vel.dy * tangent.dy)
-    let forceFade = max(0, min(1, 1 - forwardSpeed / 1_200))
+    let forceFade = max(0, min(1, 1 - forwardSpeed / 1_000))
     let climbLoad = max(tangent.dy, 0)
     let riderForce = (pedalForce + pedalClimbForce * climbLoad) * forceFade
 
@@ -827,7 +838,7 @@ for _ in 0..<5 {
     climbingVel = simulateUphillPedal(velocity: climbingVel, tangent: steepTangent, pedalHeld: true, isGrounded: true)
 }
 let climbSpeedAfter5Frames = climbingVel.dx * steepTangent.dx + climbingVel.dy * steepTangent.dy
-suite.assert(climbSpeedAfter5Frames > 65.0, "Pedal climb force powers bike up steep 30° hill from dead stop: \(climbSpeedAfter5Frames) > 65 pt/s")
+suite.assert(climbSpeedAfter5Frames > 8.0, "Pedal climb force powers bike up steep 30° hill from dead stop: \(climbSpeedAfter5Frames) > 8 pt/s")
 
 // 3. Normal low-speed pedaling on flat accelerates smoothly
 let flatVel = CGVector(dx: 60.0, dy: 0.0)

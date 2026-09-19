@@ -255,17 +255,33 @@ final class BikeNode: SKNode {
         let recoveryPosition = chassisIsBroken ? .zero : chassisPosition
         let recoveryAttitude = chassis.zRotation.isFinite ? chassis.zRotation : 0
         let wasDynamic = chassis.physicsBody?.isDynamic ?? false
+        let safeVel: CGVector
+        if let cVel = chassis.physicsBody?.velocity, cVel.dx.isFinite, cVel.dy.isFinite {
+            let spd = hypot(cVel.dx, cVel.dy)
+            let maxSpd = GameTuning.Bike.maximumSpeed
+            if spd > maxSpd {
+                let scale = maxSpd / spd
+                safeVel = CGVector(dx: cVel.dx * scale, dy: cVel.dy * scale)
+            } else {
+                safeVel = cVel
+            }
+        } else {
+            safeVel = .zero
+        }
+
         reset(at: recoveryPosition, attitude: recoveryAttitude)
         if wasDynamic {
             activatePhysics()
+            for body in allBodies {
+                body.velocity = safeVel
+            }
         }
         return true
     }
 
     /// Safeguards against Box2D edge tunneling at high speeds and hard landings.
-    /// Clamps wheel and chassis positions to always remain above the terrain surface,
-    /// cancelling downward penetration momentum and preventing the bike from falling
-    /// through the map.
+    /// Moves the entire bike rig together as a unified assembly so joint constraints
+    /// and spring displacements remain zero, completely eliminating violent slingshots.
     func recoverTerrainPenetration(
         terrainHeightAt: (CGFloat) -> CGFloat,
         terrainSlopeAt: ((CGFloat) -> CGFloat)? = nil
@@ -274,48 +290,46 @@ final class BikeNode: SKNode {
         let recoveryClearance = GameTuning.Terrain.wheelPenetrationRecoveryClearance
         let trigger = GameTuning.Terrain.wheelPenetrationRecoveryTrigger
 
-        // 1. Recover rear wheel
+        var maxDeltaY: CGFloat = 0
+
+        // 1. Check rear wheel penetration
         let rearSlope = terrainSlopeAt?(rearWheel.position.x) ?? 0
-        // On uphill transitions (slope > 0.05), the terrain ahead rises in front of the wheel,
-        // so terrainHeightAt(x) samples the ramp wall rather than ground beneath the wheel.
-        // Box2D's circle collider handles rising ramps naturally; skipping upward ramps
-        // prevents falsely teleporting the wheel and tearing the pin joint apart.
         if rearSlope <= 0.05 {
             let rearTerrainY = terrainHeightAt(rearWheel.position.x)
             let idealRearY = rearTerrainY + wheelRadius
             if rearWheel.position.y <= idealRearY - trigger {
                 let deltaY = (idealRearY + recoveryClearance) - rearWheel.position.y
-                rearWheel.position.y += deltaY
-                swingarm.position.y += deltaY
-                if let body = rearWheel.physicsBody, body.velocity.dy < 0 {
-                    body.velocity.dy = 0
-                }
+                if deltaY > maxDeltaY { maxDeltaY = deltaY }
             }
         }
 
-        // 2. Recover front wheel
+        // 2. Check front wheel penetration
         let frontSlope = terrainSlopeAt?(frontWheel.position.x) ?? 0
         if frontSlope <= 0.05 {
             let frontTerrainY = terrainHeightAt(frontWheel.position.x)
             let idealFrontY = frontTerrainY + wheelRadius
             if frontWheel.position.y <= idealFrontY - trigger {
                 let deltaY = (idealFrontY + recoveryClearance) - frontWheel.position.y
-                frontWheel.position.y += deltaY
-                frontFork.position.y += deltaY
-                if let body = frontWheel.physicsBody, body.velocity.dy < 0 {
-                    body.velocity.dy = 0
-                }
+                if deltaY > maxDeltaY { maxDeltaY = deltaY }
             }
         }
 
-        // 3. Recover chassis frame
+        // 3. Check chassis bottom-out penetration
         let chassisSlope = terrainSlopeAt?(chassis.position.x) ?? 0
         if chassisSlope <= 0.05 {
             let chassisTerrainY = terrainHeightAt(chassis.position.x)
             let minChassisY = chassisTerrainY + GameTuning.Bike.frameGuardRadius
             if chassis.position.y <= minChassisY - trigger {
-                chassis.position.y = minChassisY + recoveryClearance
-                if let body = chassis.physicsBody, body.velocity.dy < 0 {
+                let deltaY = (minChassisY + recoveryClearance) - chassis.position.y
+                if deltaY > maxDeltaY { maxDeltaY = deltaY }
+            }
+        }
+
+        // Translate the ENTIRE bike assembly together as a single unit
+        if maxDeltaY > 0 && maxDeltaY <= 30 {
+            for node in [chassis, swingarm, frontFork, rearWheel, frontWheel] {
+                node.position.y += maxDeltaY
+                if let body = node.physicsBody, body.velocity.dy < 0 {
                     body.velocity.dy = 0
                 }
             }

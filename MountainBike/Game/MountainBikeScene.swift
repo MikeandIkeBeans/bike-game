@@ -266,20 +266,22 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
                 }
             )
 
-            // Catastrophic tunneling failsafe: if a frame hitch or solver glitch
-            // ever places the chassis >25 units beneath the terrain line while NOT grounded,
-            // immediately rescue the bike back onto the trail with preserved momentum.
+            // Catastrophic tunneling failsafe: if a severe frame hitch or solver glitch
+            // ever places the chassis >60 units beneath the terrain line while NOT grounded,
+            // rescue the entire bike assembly back onto the trail with unified momentum across all bodies.
             let chassisX = bike.chassisPosition.x
             let chassisY = bike.chassisPosition.y
             guard chassisX.isFinite, chassisY.isFinite else { return }
             let terrainY = terrainStream.surfaceTerrainHeight(at: chassisX) ?? terrainStream.terrainHeight(at: chassisX)
-            if !isGrounded && chassisY < terrainY - 25 {
+            if !isGrounded && chassisY < terrainY - 60 {
                 let attitude = terrainStream.supportAngle(at: chassisX)
                 let safeY = terrainY + bike.spawnClearance(for: attitude) + 2.0
-                let currentSpeed = max(bike.velocity.dx, 150)
+                let currentSpeed = min(max(bike.velocity.dx, 100), GameTuning.Bike.maximumSpeed)
                 bike.reset(at: CGPoint(x: chassisX, y: safeY), attitude: attitude)
                 bike.activatePhysics()
-                bike.chassisBody.velocity = CGVector(dx: currentSpeed, dy: 0)
+                for body in bike.allBodies {
+                    body.velocity = CGVector(dx: currentSpeed, dy: 0)
+                }
             }
 
             elapsedRunTime += frameDelta

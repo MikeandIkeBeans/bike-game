@@ -332,9 +332,11 @@ final class TerrainStreamController {
     /// beneath a moving bike.
     func ensureTerrainAhead(of positionX: CGFloat) {
         guard positionX.isFinite else { return }
-        let targetX = positionX + GameTuning.Terrain.streamAheadDistance
+        // Clamp ahead target so momentary velocity spikes can never cause runaway chunk allocation
+        let clampedPosition = min(positionX, levelEndX + 1_500)
+        let targetX = clampedPosition + GameTuning.Terrain.streamAheadDistance
         var chunksAppended = 0
-        while levelEndX < targetX && chunksAppended < 30 {
+        while levelEndX < targetX && chunksAppended < 6 {
             let previousEndX = levelEndX
             appendTerrainChunk()
             chunksAppended += 1
