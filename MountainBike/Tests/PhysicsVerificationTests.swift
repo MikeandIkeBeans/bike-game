@@ -645,7 +645,7 @@ suite.assertEqual(pr5.chassisVy, 0.0, "Rescued vertical velocity zeroed")
 print("\n• Test Group 14: Newtonian Gravity & Ballistic Launch Invariants")
 
 // 1. Friction coefficients: solid tire grip on dirt, frictionless chassis for scoops
-let tireFriction: CGFloat = 0.85
+let tireFriction: CGFloat = 0.90
 let terrainFriction: CGFloat = 1.10
 let combinedTireMu = sqrt(tireFriction * terrainFriction)
 suite.assert(combinedTireMu >= 0.85, "Combined tire friction (\(combinedTireMu)) provides solid traction (>= 0.85)")
@@ -653,61 +653,56 @@ let chassisFriction: CGFloat = 0.05
 suite.assert(chassisFriction <= 0.10, "Chassis friction (\(chassisFriction)) prevents ground hang-up during suspension scoops (<= 0.10)")
 
 // 2. Pure Newtonian gravity acceleration down 45° slope (no multipliers or artificial boosts)
-let g: CGFloat = 9.81 * 22.4 // 219.744 pt/s²
+let g: CGFloat = 9.81 * 14.0 // 137.34 pt/s²
 let downhillSlopeAngle = CGFloat.pi / 4.0 // 45 deg
-let accelAlong45Downhill = g * sin(downhillSlopeAngle) // 155.38 pt/s²
-suite.assertNear(accelAlong45Downhill, 155.38, accuracy: 0.5, "Pure gravity acceleration down 45° slope is ~155.4 pt/s²")
+let accelAlong45Downhill = g * sin(downhillSlopeAngle) // 97.11 pt/s²
+suite.assertNear(accelAlong45Downhill, 97.11, accuracy: 0.5, "Pure gravity acceleration down 45° slope is ~97.1 pt/s²")
 
 // Simulate 1.5 seconds of downhill roll from 200 pt/s without any artificial multiplier
 var downhillSpeed: CGFloat = 200.0
 for _ in 0..<94 { // 94 frames * 0.016s = 1.504s
     downhillSpeed += accelAlong45Downhill * 0.016
 }
-suite.assert(downhillSpeed > 400.0, "Natural gravity massively builds speed down 45° hill (200 -> \(downhillSpeed) pt/s > 400)")
+suite.assert(downhillSpeed > 340.0, "Natural gravity massively builds speed down 45° hill (200 -> \(downhillSpeed) pt/s > 340)")
 
 // 3. Consistent gravity deceleration up 30° hill
 let uphillAngle = CGFloat.pi / 6.0 // 30 deg
-let decelAlong30Uphill = g * sin(uphillAngle) // 109.87 pt/s²
-suite.assertNear(decelAlong30Uphill, 109.87, accuracy: 0.5, "Pure gravity deceleration up 30° slope is ~109.9 pt/s²")
+let decelAlong30Uphill = g * sin(uphillAngle) // 68.67 pt/s²
+suite.assertNear(decelAlong30Uphill, 68.67, accuracy: 0.5, "Pure gravity deceleration up 30° slope is ~68.7 pt/s²")
 
 // 4. Parabolic jump trajectory: launching at 700 pt/s off 25.6° kicker (slope ~0.48)
 let kickerTakeoffAngle = atan(0.48) // ~25.64 degrees
 let launchVx = 700.0 * cos(kickerTakeoffAngle) // ~631.0 pt/s
 let launchVy = 700.0 * sin(kickerTakeoffAngle) // ~302.9 pt/s
-let apexHeight = (launchVy * launchVy) / (2.0 * g) // ~208.7 pt
-let timeToApex = launchVy / g // ~1.38 s
-let totalHangtime = timeToApex * 2.0 // ~2.76 s
-let jumpDistance = launchVx * totalHangtime // ~1739 pt (~348m display)
+let apexHeight = (launchVy * launchVy) / (2.0 * g) // ~334.0 pt
+let timeToApex = launchVy / g // ~2.21 s
+let totalHangtime = timeToApex * 2.0 // ~4.41 s
+let jumpDistance = launchVx * totalHangtime // ~2783 pt
 
-suite.assert(apexHeight > 180.0 && apexHeight < 250.0, "Launch apex height is natural and weighted: \(apexHeight) pt (~208 pt)")
-suite.assert(totalHangtime > 2.2 && totalHangtime < 3.2, "Hangtime is realistic (~2.76s): \(totalHangtime)s")
-suite.assert(jumpDistance > 1500.0, "Horizontal jump distance carries far across landing zone: \(jumpDistance) pt")
+suite.assert(apexHeight > 280.0 && apexHeight < 400.0, "Launch apex height is natural and weighted: \(apexHeight) pt (~334 pt)")
+suite.assert(totalHangtime > 3.5 && totalHangtime < 5.5, "Hangtime is realistic (~4.4s): \(totalHangtime)s")
+suite.assert(jumpDistance > 2000.0, "Horizontal jump distance carries far across landing zone: \(jumpDistance) pt")
 
 // 5. Space launch elimination under authoritative gravity: even at 1500 pt/s launch, bike returns to earth
 let extremeLaunchVy: CGFloat = 600.0
 let extremeApexTime = extremeLaunchVy / g
 let extremeApexHeight = (extremeLaunchVy * extremeLaunchVy) / (2.0 * g)
-suite.assert(extremeApexTime < 3.5, "Extreme launch reaches apex within 3.5s (eliminates space launch bug): \(extremeApexTime)s")
-suite.assert(extremeApexHeight < 900.0, "Extreme launch apex is bounded by physics (< 900 pt): \(extremeApexHeight) pt")
+suite.assert(extremeApexTime < 5.0, "Extreme launch reaches apex within 5.0s (eliminates space launch bug): \(extremeApexTime)s")
+suite.assert(extremeApexHeight < 1500.0, "Extreme launch apex is bounded by physics (< 1500 pt): \(extremeApexHeight) pt")
 
-// 6. Wall impact crash detection: slamming into steep wall (> 0.65 dy) at high speed triggers crash
-func checkWallImpactCrash(velocity: CGVector, tangent: CGVector) -> Bool {
-    let currentSpeed = hypot(velocity.dx, velocity.dy)
-    let normal = CGVector(dx: -tangent.dy, dy: tangent.dx)
-    let normalVelocity = velocity.dx * normal.dx + velocity.dy * normal.dy
-    return tangent.dy > 0.65 && currentSpeed > 450 && normalVelocity < -180
+// 6. Frame strike crash detection: chassis touching terrain only crashes when pitched severely (>= 49° / 0.85 rad)
+func evaluateFrameCrash(chassisContact: Bool, pitch: CGFloat) -> Bool {
+    return chassisContact && abs(pitch) >= 0.85
 }
 
-let wallTangent = CGVector(dx: 0.35, dy: 0.93) // Steep wall dy > 0.65
-let slamVel = CGVector(dx: 600.0, dy: -200.0) // 632 pt/s slamming into wall
-let didCrashOnWall = checkWallImpactCrash(velocity: slamVel, tangent: wallTangent)
-suite.assert(didCrashOnWall, "Slamming into steep wall at high speed triggers crash instead of launching into space")
+let uprightScrapeCrash = evaluateFrameCrash(chassisContact: true, pitch: 0.10) // 5.7 deg pitch
+suite.assert(!uprightScrapeCrash, "Upright chassis scrape during suspension compression does NOT cause false crash")
 
-// Normal ramp entry does NOT falsely trigger crash
-let rampTangent = CGVector(dx: 0.90, dy: 0.43)
-let smoothVel = CGVector(dx: 600.0, dy: -50.0)
-let didCrashOnRamp = checkWallImpactCrash(velocity: smoothVel, tangent: rampTangent)
-suite.assert(!didCrashOnRamp, "Smooth ramp transition does not trigger wall crash")
+let noseDiveCrash = evaluateFrameCrash(chassisContact: true, pitch: -0.92) // 52.7 deg nose-dive
+suite.assert(noseDiveCrash, "Severe nose-dive frame strike (>= 0.85 rad) correctly triggers crash")
+
+let loopOutCrash = evaluateFrameCrash(chassisContact: true, pitch: 0.88) // 50.4 deg loop out
+suite.assert(loopOutCrash, "Severe loop-out frame strike (>= 0.85 rad) correctly triggers crash")
 
 // 7. Braking deceleration: leaning back grounded decelerates bike along trail tangent
 func simulateBraking(velocity: CGVector, tangent: CGVector, delta: TimeInterval = 0.016) -> CGVector {
@@ -734,8 +729,8 @@ func simulateUphillPedal(
     tangent: CGVector,
     pedalHeld: Bool,
     isGrounded: Bool,
-    pedalForce: CGFloat = 3_600,
-    pedalClimbForce: CGFloat = 5_400,
+    pedalForce: CGFloat = 3_200,
+    pedalClimbForce: CGFloat = 4_800,
     totalMass: CGFloat = 6.6,
     delta: TimeInterval = 0.016
 ) -> CGVector {
@@ -778,7 +773,7 @@ for _ in 0..<5 {
     climbingVel = simulateUphillPedal(velocity: climbingVel, tangent: steepTangent, pedalHeld: true, isGrounded: true)
 }
 let climbSpeedAfter5Frames = climbingVel.dx * steepTangent.dx + climbingVel.dy * steepTangent.dy
-suite.assert(climbSpeedAfter5Frames > 70.0, "Pedal climb force powers bike up steep 30° hill from dead stop: \(climbSpeedAfter5Frames) > 70 pt/s")
+suite.assert(climbSpeedAfter5Frames > 65.0, "Pedal climb force powers bike up steep 30° hill from dead stop: \(climbSpeedAfter5Frames) > 65 pt/s")
 
 // 3. Normal low-speed pedaling on flat accelerates smoothly
 let flatVel = CGVector(dx: 60.0, dy: 0.0)

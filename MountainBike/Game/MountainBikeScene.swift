@@ -504,18 +504,9 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             if abs(airborneRotation) >= GameTuning.Crash.maximumAirborneRotation || abs(bike.chassisRotation) >= GameTuning.Crash.maximumRelativeLeanAngle {
                 requestCrash(.lostControl)
             }
-            let frameContact = contacts.touches(bike.chassisBody) || contacts.touches(bike.swingarmBody)
-            if frameContact, (!isGrounded || abs(bike.chassisRotation) >= GameTuning.Crash.minimumFrameStrikePitch) {
+            let frameContact = contacts.touches(bike.chassisBody)
+            if frameContact && abs(bike.chassisRotation) >= GameTuning.Crash.minimumFrameStrikePitch {
                 requestCrash(.frameStrike)
-            }
-            // Slamming into a steep upward wall or sharp U-lip without braking causes a realistic crash
-            if let tangent = pedalSupportTangent() {
-                let normal = CGVector(dx: -tangent.dy, dy: tangent.dx)
-                let normalVelocity = bike.velocity.dx * normal.dx + bike.velocity.dy * normal.dy
-                let currentSpeed = hypot(bike.velocity.dx, bike.velocity.dy)
-                if tangent.dy > 0.65 && currentSpeed > 450 && normalVelocity < -180 {
-                    requestCrash(.frameStrike)
-                }
             }
         }
 

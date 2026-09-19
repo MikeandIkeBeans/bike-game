@@ -557,8 +557,8 @@ final class BikeNode: SKNode {
         sBody.allowsRotation = true
         sBody.usesPreciseCollisionDetection = true
         sBody.categoryBitMask = PhysicsCategory.bike | PhysicsCategory.bikeSwingarm
-        sBody.collisionBitMask = PhysicsCategory.terrain
-        sBody.contactTestBitMask = PhysicsCategory.terrain
+        sBody.collisionBitMask = 0
+        sBody.contactTestBitMask = 0
         swingarm.physicsBody = sBody
 
         let rwBody = SKPhysicsBody(circleOfRadius: GameTuning.Bike.collisionWheelRadius)
@@ -606,8 +606,8 @@ final class BikeNode: SKNode {
         ffBody.allowsRotation = true
         ffBody.usesPreciseCollisionDetection = true
         ffBody.categoryBitMask = PhysicsCategory.bike | PhysicsCategory.bikeFrontFork
-        ffBody.collisionBitMask = PhysicsCategory.terrain
-        ffBody.contactTestBitMask = PhysicsCategory.terrain
+        ffBody.collisionBitMask = 0
+        ffBody.contactTestBitMask = 0
         frontFork.physicsBody = ffBody
     }
 
