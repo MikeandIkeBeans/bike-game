@@ -100,9 +100,14 @@ enum GameTuning {
         /// multiplier is ever applied.
         static let worldUnitsPerPhysicsMeter: CGFloat = 14.0
         static let earthGravityMetersPerSecondSquared: CGFloat = 9.81
+        /// Authoritative gravitational acceleration in points/s^2 used by the physics model and tests.
+        static let gravityAcceleration: CGFloat = earthGravityMetersPerSecondSquared * worldUnitsPerPhysicsMeter
+        /// SpriteKit internally scales `physicsWorld.gravity` by 150.0 points/meter.
+        /// To produce the authoritative acceleration (137.34 pt/s^2), divide by 150.0:
+        static let spriteKitPointsPerMeter: CGFloat = 150.0
         static let gravity = CGVector(
             dx: 0,
-            dy: -earthGravityMetersPerSecondSquared * worldUnitsPerPhysicsMeter
+            dy: -gravityAcceleration / spriteKitPointsPerMeter
         )
     }
 

@@ -476,13 +476,13 @@ final class TerrainStreamController {
     ) -> (segments: [TerrainSegment], cursor: TerrainCursor) {
         let cycle = chunkIndex / 5
         let phase = chunkIndex % 5
-        let ox = CGFloat(cycle) * 20300.0
-        let oy = CGFloat(cycle) * -10607.5
+        let ox = CGFloat(cycle) * 21100.0
+        let oy = CGFloat(cycle) * -9957.5
 
         let segments: [TerrainSegment]
         switch phase {
         case 0:
-            // Flat roll-in and steep 45° drop-in chute (dropping 1,620 units)
+            // Flat roll-in, smooth gradual crest transition (R ~ 1,400 pt) to avoid launching off the top, and steep gravity chute (-0.65)
             segments = [
                 TerrainSegment(
                     start: CGPoint(x: -480 + ox, y: 1200 + oy),
@@ -493,56 +493,56 @@ final class TerrainStreamController {
                 ),
                 TerrainSegment(
                     start: CGPoint(x: 20 + ox, y: 1200 + oy),
-                    end: CGPoint(x: 260 + ox, y: 1080 + oy),
+                    end: CGPoint(x: 820 + ox, y: 940 + oy),
                     startSlope: 0,
-                    endSlope: -1.0,
+                    endSlope: -0.65,
                     isLinear: false
                 ),
                 TerrainSegment(
-                    start: CGPoint(x: 260 + ox, y: 1080 + oy),
-                    end: CGPoint(x: 1760 + ox, y: -420 + oy),
-                    startSlope: -1.0,
-                    endSlope: -1.0,
+                    start: CGPoint(x: 820 + ox, y: 940 + oy),
+                    end: CGPoint(x: 2220 + ox, y: 30 + oy),
+                    startSlope: -0.65,
+                    endSlope: -0.65,
                     isLinear: false
                 )
             ]
         case 1:
-            // Continued steep 45° chute, expansive smooth scoop (1,000 pt), smooth kicker transition, straight flat kicker ramp, and the 100m (1,400 pt) mega gap
+            // Continued steep chute (-0.65), massive smooth scoop transition (R ~ 2,083 pt), kicker ramp, and the 100m (1,400 pt) canyon air gap
             segments = [
                 TerrainSegment(
-                    start: CGPoint(x: 1760 + ox, y: -420 + oy),
-                    end: CGPoint(x: 2360 + ox, y: -1020 + oy),
-                    startSlope: -1.0,
-                    endSlope: -1.0,
+                    start: CGPoint(x: 2220 + ox, y: 30 + oy),
+                    end: CGPoint(x: 2820 + ox, y: -360 + oy),
+                    startSlope: -0.65,
+                    endSlope: -0.65,
                     isLinear: false
                 ),
                 TerrainSegment(
-                    start: CGPoint(x: 2360 + ox, y: -1020 + oy),
-                    end: CGPoint(x: 3360 + ox, y: -1520 + oy),
-                    startSlope: -1.0,
+                    start: CGPoint(x: 2820 + ox, y: -360 + oy),
+                    end: CGPoint(x: 4020 + ox, y: -750 + oy),
+                    startSlope: -0.65,
                     endSlope: 0.0,
                     isLinear: false,
                     maximumUphillSlope: 1.2
                 ),
                 TerrainSegment(
-                    start: CGPoint(x: 3360 + ox, y: -1520 + oy),
-                    end: CGPoint(x: 3860 + ox, y: -1400 + oy),
+                    start: CGPoint(x: 4020 + ox, y: -750 + oy),
+                    end: CGPoint(x: 4620 + ox, y: -606 + oy),
                     startSlope: 0.0,
                     endSlope: 0.48,
                     isLinear: false,
                     maximumUphillSlope: 1.2
                 ),
                 TerrainSegment(
-                    start: CGPoint(x: 3860 + ox, y: -1400 + oy),
-                    end: CGPoint(x: 4000 + ox, y: -1332.8 + oy),
+                    start: CGPoint(x: 4620 + ox, y: -606 + oy),
+                    end: CGPoint(x: 4800 + ox, y: -519.6 + oy),
                     startSlope: 0.48,
                     endSlope: 0.48,
                     isLinear: true,
                     maximumUphillSlope: 1.2
                 ),
                 TerrainSegment(
-                    start: CGPoint(x: 4000 + ox, y: -1332.8 + oy),
-                    end: CGPoint(x: 5400 + ox, y: -2450.0 + oy),
+                    start: CGPoint(x: 4800 + ox, y: -519.6 + oy),
+                    end: CGPoint(x: 6200 + ox, y: -1800.0 + oy),
                     startSlope: 0.48,
                     endSlope: -0.55,
                     isLinear: true,
@@ -554,8 +554,8 @@ final class TerrainStreamController {
             // Upper expansive downhill landing catch zone (4,000 pt = 286 m)
             segments = [
                 TerrainSegment(
-                    start: CGPoint(x: 5400 + ox, y: -2450.0 + oy),
-                    end: CGPoint(x: 9400 + ox, y: -4650.0 + oy),
+                    start: CGPoint(x: 6200 + ox, y: -1800.0 + oy),
+                    end: CGPoint(x: 10200 + ox, y: -4000.0 + oy),
                     startSlope: -0.55,
                     endSlope: -0.55,
                     isLinear: false
@@ -565,8 +565,8 @@ final class TerrainStreamController {
             // Middle expansive downhill landing catch zone (4,000 pt = 286 m)
             segments = [
                 TerrainSegment(
-                    start: CGPoint(x: 9400 + ox, y: -4650.0 + oy),
-                    end: CGPoint(x: 13400 + ox, y: -6850.0 + oy),
+                    start: CGPoint(x: 10200 + ox, y: -4000.0 + oy),
+                    end: CGPoint(x: 14200 + ox, y: -6200.0 + oy),
                     startSlope: -0.55,
                     endSlope: -0.55,
                     isLinear: false
@@ -576,23 +576,23 @@ final class TerrainStreamController {
             // Lower catch zone (4,000 pt), smooth deceleration runout scoop, and flat roll-in connecting to the next cycle
             segments = [
                 TerrainSegment(
-                    start: CGPoint(x: 13400 + ox, y: -6850.0 + oy),
-                    end: CGPoint(x: 17400 + ox, y: -9050.0 + oy),
+                    start: CGPoint(x: 14200 + ox, y: -6200.0 + oy),
+                    end: CGPoint(x: 18200 + ox, y: -8400.0 + oy),
                     startSlope: -0.55,
                     endSlope: -0.55,
                     isLinear: false
                 ),
                 TerrainSegment(
-                    start: CGPoint(x: 17400 + ox, y: -9050.0 + oy),
-                    end: CGPoint(x: 18700 + ox, y: -9407.5 + oy),
+                    start: CGPoint(x: 18200 + ox, y: -8400.0 + oy),
+                    end: CGPoint(x: 19500 + ox, y: -8757.5 + oy),
                     startSlope: -0.55,
                     endSlope: 0.0,
                     isLinear: false,
                     maximumUphillSlope: 1.2
                 ),
                 TerrainSegment(
-                    start: CGPoint(x: 18700 + ox, y: -9407.5 + oy),
-                    end: CGPoint(x: 19820 + ox, y: -9407.5 + oy),
+                    start: CGPoint(x: 19500 + ox, y: -8757.5 + oy),
+                    end: CGPoint(x: 20620 + ox, y: -8757.5 + oy),
                     startSlope: 0.0,
                     endSlope: 0.0,
                     isLinear: false,
@@ -1225,7 +1225,7 @@ final class TerrainStreamController {
         biome: TerrainBiome
     ) -> SKNode {
         let scenery = SKNode()
-        guard !surfaceRuns.isEmpty else { return scenery }
+        guard !surfaceRuns.isEmpty, mapMode != .megaJump else { return scenery }
 
         var random = DeterministicRandom(seed: terrainSeed ^ UInt64(chunkIndex + 1))
         for treeIndex in 0..<3 {

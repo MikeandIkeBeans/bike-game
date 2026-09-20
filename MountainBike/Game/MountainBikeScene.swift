@@ -148,6 +148,14 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     private var spawnPitchLockRemaining: TimeInterval = 0
     private lazy var bestDistance = UserDefaults.standard.integer(forKey: bestDistanceKey)
 
+    private let isAutoTest: Bool = {
+        ProcessInfo.processInfo.arguments.contains("--auto-test")
+            || ProcessInfo.processInfo.environment["AUTO_TEST"] == "1"
+    }()
+    private var autoTestLoggedTakeoff = false
+    private var autoTestLoggedLanding = false
+    private var autoTestLastLogTime: TimeInterval = 0
+
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
     private let heavyHaptic = UIImpactFeedbackGenerator(style: .heavy)
 
@@ -230,6 +238,18 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         resetRun(showIntro: true)
         lightHaptic.prepare()
         heavyHaptic.prepare()
+
+        if isAutoTest {
+            NSLog("[AUTO-TEST] Initialized auto-test mode on map: %@", mapMode.rawValue)
+            run(.sequence([
+                .wait(forDuration: 0.5),
+                .run { [weak self] in
+                    self?.startRun()
+                    self?.pedalHeld = true
+                    NSLog("[AUTO-TEST] Started run and holding pedal")
+                }
+            ]))
+        }
     }
 
     override func didChangeSize(_ oldSize: CGSize) {
@@ -255,6 +275,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
 
         updateSpawnPitchLock()
         terrainStream.ensureTerrainAhead(of: bike.chassisPosition.x)
+        applyDownhillAdhesion()
         applyPedalDrive()
         applyBraking()
         preserveTransitionMomentum()
@@ -305,6 +326,9 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             updateHUD()
             if runState == .riding {
                 retireTerrainBehindBike()
+            }
+            if isAutoTest {
+                updateAutoTest()
             }
         }
 
@@ -392,19 +416,18 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         let currentSpeed = hypot(bike.velocity.dx, bike.velocity.dy)
         guard currentSpeed > 40 else { return }
 
-        // On downhills (tangent.dy < -0.05), apply downhill gravity assistance force to chassis
-        // to overcome Box2D discrete edge-chain friction:
+        // On downhills (tangent.dy < -0.05), apply downhill gravity assistance force
+        // distributed proportionally across all bodies to overcome Box2D edge-chain friction
+        // without inducing rotational pitch moments:
         if tangent.dy < -0.05 {
-            let downhillSlopeAccel = (-GameTuning.Simulation.gravity.dy) * (-tangent.dy)
-            let assistMultiplier: CGFloat = (terrainStream.mapMode == .megaJump) ? 6.0 : 1.5
-            let assistForce = downhillSlopeAccel * bike.chassisBody.mass * assistMultiplier
-            bike.chassisBody.applyForce(CGVector(
-                dx: tangent.dx * assistForce,
-                dy: tangent.dy * assistForce
-            ))
-            if terrainStream.mapMode == .megaJump {
-                bike.rearWheelBody.applyTorque(-assistForce * 0.15)
-                bike.frontWheelBody.applyTorque(-assistForce * 0.15)
+            let downhillSlopeAccel = GameTuning.Simulation.gravityAcceleration * (-tangent.dy)
+            let assistMultiplier: CGFloat = (terrainStream.mapMode == .megaJump) ? 2.8 : 1.5
+            let accel = downhillSlopeAccel * assistMultiplier
+            for body in bike.allBodies {
+                body.applyForce(CGVector(
+                    dx: tangent.dx * body.mass * accel,
+                    dy: tangent.dy * body.mass * accel
+                ))
             }
         }
 
@@ -487,20 +510,80 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         return nil
     }
 
+    /// In Mega Jump mode, ensures the bike hugs the roll-in and chute track under high speed
+    /// to avoid lifting off convex crests prematurely before the kicker ramp.
+    private func applyDownhillAdhesion() {
+        guard terrainStream.mapMode == .megaJump else { return }
+        let chassisX = bike.chassisPosition.x
+        let chassisY = bike.chassisPosition.y
+        guard chassisX.isFinite, chassisY.isFinite else { return }
+
+        // Adhesion only active on the roll-in/chute before kicker lip (x < 4780)
+        // or on the landing runway (x >= 6200). In the gap (4780 <= x < 6200), flight is purely ballistic!
+        let isTrackZone = (chassisX < 4780) || (chassisX >= 6200)
+        guard isTrackZone else { return }
+
+        guard let surfaceY = terrainStream.surfaceTerrainHeight(at: chassisX) else { return }
+        let clearance = chassisY - surfaceY
+
+        // Only apply when close to the terrain (clearance between -20 and +80 points)
+        guard clearance >= -20 && clearance <= 80 else { return }
+
+        let supportAngle = terrainStream.supportAngle(at: chassisX)
+        // Perpendicular normal pointing directly INTO the track:
+        let intoGround = CGVector(dx: sin(supportAngle), dy: -cos(supportAngle))
+
+        let downforceAccel: CGFloat = (isGrounded ? 700.0 : 1400.0)
+        for body in bike.allBodies {
+            body.applyForce(CGVector(
+                dx: intoGround.dx * body.mass * downforceAccel,
+                dy: intoGround.dy * body.mass * downforceAccel
+            ))
+        }
+
+        // If the chassis has bounced off the crest into the air, dampen vertical rebound
+        // so it smoothly settles back into the chute
+        if !isGrounded && clearance > 20 && bike.velocity.dy > 0 {
+            for body in bike.allBodies {
+                body.velocity.dy *= 0.80
+            }
+        }
+    }
+
     /// Rider pitch torque applied to the chassis body. Lean back creates a
     /// wheelie/climb posture; lean forward drives into drops and downhills.
     private func applyRiderLean() {
-        guard leanInput != 0 else { return }
-        let torqueMagnitude = isGrounded
-            ? GameTuning.Handling.groundLeanTorque
-            : GameTuning.Handling.airLeanTorque
-        let torque = leanInput * torqueMagnitude
-        bike.chassisBody.applyTorque(torque)
+        if leanInput != 0 {
+            let torqueMagnitude = isGrounded
+                ? GameTuning.Handling.groundLeanTorque
+                : GameTuning.Handling.airLeanTorque
+            let torque = leanInput * torqueMagnitude
+            bike.chassisBody.applyTorque(torque)
+        } else if isGrounded {
+            // Natural ground attitude leveling: when rider is not actively leaning,
+            // maintain chassis orientation parallel to the terrain slope to prevent
+            // runaway pitch divergence, endos, or wheelies at high speeds.
+            let supportAngle = terrainStream.supportAngle(at: bike.chassisPosition.x)
+            let relativePitch = normalizedAngle(bike.chassisRotation - supportAngle)
+            let levelingTorque = clamp(-relativePitch * 140.0, -80.0, 80.0)
+            bike.chassisBody.applyTorque(levelingTorque)
+        } else if terrainStream.mapMode == .megaJump {
+            // When airborne in Mega Jump with neutral rider lean, aerodynamic alignment gently
+            // pitches the bike toward its flight trajectory vector so it lands smoothly on the landing slope.
+            let vx = bike.velocity.dx
+            let vy = bike.velocity.dy
+            if vx > 80 {
+                let flightAngle = atan2(vy, vx)
+                let angleDiff = normalizedAngle(flightAngle - bike.chassisRotation)
+                let aeroTorque = clamp(angleDiff * 80.0, -35.0, 35.0)
+                bike.chassisBody.applyTorque(aeroTorque)
+            }
+        }
     }
 
     private func capVehicleMotion() {
-        let maxAllowedSpeed = GameTuning.Bike.maximumSpeed
-        let maxVerticalSpeed: CGFloat = (terrainStream.mapMode == .megaJump) ? 1_400.0 : 600.0
+        let maxAllowedSpeed: CGFloat = (terrainStream.mapMode == .megaJump) ? 1_300.0 : GameTuning.Bike.maximumSpeed
+        let maxVerticalSpeed: CGFloat = (terrainStream.mapMode == .megaJump) ? 900.0 : 600.0
         for body in bike.allBodies {
             let speed = vectorLength(body.velocity)
             if speed > maxAllowedSpeed {
@@ -509,6 +592,8 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             }
             if body.velocity.dy > maxVerticalSpeed {
                 body.velocity.dy = maxVerticalSpeed
+            } else if body.velocity.dy < -maxVerticalSpeed {
+                body.velocity.dy = -maxVerticalSpeed
             }
         }
         for body in [bike.chassisBody, bike.swingarmBody, bike.frontForkBody] {
@@ -550,6 +635,80 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             airborneStartX = 0
         }
         wasGrounded = currentlyGrounded
+    }
+
+    private func updateAutoTest() {
+        let chassisX = bike.chassisPosition.x
+        let chassisY = bike.chassisPosition.y
+        let vx = bike.velocity.dx
+        let vy = bike.velocity.dy
+        let speedPt = hypot(vx, vy)
+        let speedKmh = currentSpeed
+
+        if elapsedRunTime - autoTestLastLogTime >= 0.5 {
+            autoTestLastLogTime = elapsedRunTime
+            NSLog("[AUTO-TEST] t=%.1fs | x=%.1f, y=%.1f | v=(%.1f, %.1f) | speed=%d km/h | grounded=%@ | slope=%.2f",
+                  elapsedRunTime, chassisX, chassisY, vx, vy, speedKmh, isGrounded ? "YES" : "NO",
+                  terrainStream.surfaceTerrainSlope(at: chassisX) ?? 0)
+        }
+
+        if chassisX >= 2000 && chassisX <= 2250 {
+            let supportAngle = terrainStream.supportAngle(at: chassisX)
+            let relativePitch = normalizedAngle(bike.chassisRotation - supportAngle)
+            NSLog("[AUTO-FRAME-CHUTE] x=%.1f, y=%.1f | v=(%.1f, %.1f) | rot=%.2f, supp=%.2f, rel=%.2f | angVel=%.2f | grounded=%@ (R:%@ F:%@ C:%@)",
+                  chassisX, chassisY, vx, vy, bike.chassisRotation, supportAngle, relativePitch,
+                  bike.chassisBody.angularVelocity,
+                  isGrounded ? "Y" : "N",
+                  axleClearance(at: bike.rearAxlePosition) != nil ? "Y" : "N",
+                  axleClearance(at: bike.frontAxlePosition) != nil ? "Y" : "N",
+                  (contacts.touches(bike.rearWheelBody) || contacts.touches(bike.frontWheelBody)) ? "Y" : "N")
+        }
+
+        if chassisX >= 3900 && chassisX <= 4300 {
+            NSLog("[AUTO-FRAME] x=%.1f, y=%.1f | v=(%.1f, %.1f) | rot=%.2f | grounded=%@ (R:%@ F:%@ C:%@) | hTerrain=%.1f | hSurface=%@",
+                  chassisX, chassisY, vx, vy, bike.chassisRotation,
+                  isGrounded ? "Y" : "N",
+                  axleClearance(at: bike.rearAxlePosition) != nil ? "Y" : "N",
+                  axleClearance(at: bike.frontAxlePosition) != nil ? "Y" : "N",
+                  (contacts.touches(bike.rearWheelBody) || contacts.touches(bike.frontWheelBody)) ? "Y" : "N",
+                  terrainStream.terrainHeight(at: chassisX),
+                  terrainStream.surfaceTerrainHeight(at: chassisX).map { String(format: "%.1f", $0) } ?? "nil")
+        }
+
+        if chassisX >= 4700 && chassisX <= 5000 {
+            NSLog("[AUTO-FRAME] x=%.1f, y=%.1f | v=(%.1f, %.1f) | rot=%.2f | grounded=%@ (R:%@ F:%@ C:%@) | hTerrain=%.1f | hSurface=%@",
+                  chassisX, chassisY, vx, vy, bike.chassisRotation,
+                  isGrounded ? "Y" : "N",
+                  axleClearance(at: bike.rearAxlePosition) != nil ? "Y" : "N",
+                  axleClearance(at: bike.frontAxlePosition) != nil ? "Y" : "N",
+                  (contacts.touches(bike.rearWheelBody) || contacts.touches(bike.frontWheelBody)) ? "Y" : "N",
+                  terrainStream.terrainHeight(at: chassisX),
+                  terrainStream.surfaceTerrainHeight(at: chassisX).map { String(format: "%.1f", $0) } ?? "nil")
+        }
+
+        // Check kicker lip takeoff:
+        if chassisX >= 4780 && !autoTestLoggedTakeoff && !isGrounded {
+            autoTestLoggedTakeoff = true
+            NSLog("[AUTO-TEST] 🚀 TAKEOFF from kicker lip at x=%.1f, y=%.1f | vx=%.1f, vy=%.1f | speed=%d km/h (%.1f pt/s)",
+                  chassisX, chassisY, vx, vy, speedKmh, speedPt)
+        }
+
+        // Check landing:
+        if chassisX >= 6200 && !autoTestLoggedLanding {
+            let terrainY = terrainStream.terrainHeight(at: chassisX)
+            let clearanceAboveTerrain = chassisY - terrainY
+            if isGrounded || clearanceAboveTerrain <= 30 {
+                autoTestLoggedLanding = true
+                let airDistance = (chassisX - 4800.0) / 14.0
+                NSLog("[AUTO-TEST] 🎯 TOUCHDOWN at x=%.1f, y=%.1f | clearance=%.1f pt | speed=%d km/h | airDistance=%.1fm",
+                      chassisX, chassisY, clearanceAboveTerrain, speedKmh, airDistance)
+                if chassisX > 6200 && clearanceAboveTerrain >= -20 {
+                    NSLog("[AUTO-TEST] ✅ SUCCESS: GAP CLEARED AND LANDED SAFELY ON RUNWAY!")
+                } else {
+                    NSLog("[AUTO-TEST] ⚠️ LANDED SHORT OR HIT CLIFF: x=%.1f, clearance=%.1f", chassisX, clearanceAboveTerrain)
+                }
+            }
+        }
     }
 
     private func evaluateRunState() {
@@ -601,6 +760,14 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
 
     private func requestCrash(_ reason: CrashReason) {
         guard runState == .riding, pendingCrash == nil else { return }
+        if isAutoTest {
+            let supportAngle = terrainStream.supportAngle(at: bike.chassisPosition.x)
+            let relativePitch = normalizedAngle(bike.chassisRotation - supportAngle)
+            NSLog("[AUTO-TEST] 🚨 requestCrash called with %@ at x=%.1f, y=%.1f | rot=%.2f, support=%.2f, relPitch=%.2f, grounded=%@, angVel=%.2f",
+                  reason.rawValue, bike.chassisPosition.x, bike.chassisPosition.y,
+                  bike.chassisRotation, supportAngle, relativePitch,
+                  isGrounded ? "YES" : "NO", bike.chassisBody.angularVelocity)
+        }
         pendingCrash = reason
     }
 
@@ -685,6 +852,10 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
 
     private func enterCrash(_ reason: CrashReason) {
         guard runState == .riding else { return }
+        if isAutoTest {
+            NSLog("[AUTO-TEST] ❌ CRASH: %@ at x=%.1f, y=%.1f | speed=%d km/h",
+                  reason.rawValue, bike.chassisPosition.x, bike.chassisPosition.y, currentSpeed)
+        }
         runState = .crashing
         activeTouches.removeAll()
         leanInput = 0
