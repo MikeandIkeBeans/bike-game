@@ -272,7 +272,6 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
                     return self.terrainStream.surfaceTerrainSlope(at: x) ?? self.terrainStream.terrainSlope(at: x)
                 }
             )
-            preserveTransitionMomentum()
 
             // Catastrophic tunneling failsafe: if a severe frame hitch or solver glitch
             // ever places the chassis >60 units beneath the terrain line while NOT grounded,
@@ -355,6 +354,12 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             body.velocity.dx += tangent.dx * deltaV
             body.velocity.dy += tangent.dy * deltaV
         }
+
+        // Drive the wheels synchronously to eliminate tire slip friction against the terrain
+        let rollSpeed = forwardSpeed + deltaV
+        let rollAngularVelocity = -rollSpeed / GameTuning.Bike.collisionWheelRadius
+        bike.rearWheelBody.angularVelocity = rollAngularVelocity
+        bike.frontWheelBody.angularVelocity = rollAngularVelocity
     }
 
     /// Rear wheel braking applied while grounded when pressing brake key.
@@ -396,38 +401,32 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     /// creating artificial boosts. Also ensures downhill gravity acceleration is not lost to edge vertex drag.
     private func preserveTransitionMomentum() {
         guard isGrounded, !keyboardBrakeHeld, let tangent = pedalSupportTangent() else { return }
-        guard tangent.dx > 0.1 else { return }
+        guard tangent.dx > 0.05 else { return }
 
         let currentSpeed = hypot(bike.velocity.dx, bike.velocity.dy)
-        guard currentSpeed > 30 else { return }
+        guard currentSpeed > 10 else { return }
 
         let alongTrail = bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy
-        guard alongTrail > 0 else { return }
+        guard alongTrail > -5 else { return }
 
         // On downhills (tangent.dy < 0), ensure Newtonian gravity acceleration along the slope
-        // is not scrubbed by Box2D discrete edge-chain vertex collisions.
+        // builds speed continuously without being scrubbed by Box2D discrete edge-chain friction:
         let downhillAccel = max(0, -tangent.dy) * (-GameTuning.Simulation.gravity.dy)
         let downhillDeltaV = downhillAccel * CGFloat(frameDelta)
 
         let targetSpeed = max(alongTrail + downhillDeltaV, currentSpeed)
-        guard targetSpeed > 30 else { return }
+        guard targetSpeed > 10 else { return }
 
-        let targetVelocity = CGVector(dx: tangent.dx * targetSpeed, dy: tangent.dy * targetSpeed)
-        let blend: CGFloat = min(CGFloat(frameDelta) * 35.0, 0.85)
-        var newVx = bike.velocity.dx * (1 - blend) + targetVelocity.dx * blend
-        var newVy = bike.velocity.dy * (1 - blend) + targetVelocity.dy * blend
-
-        let newSpeed = hypot(newVx, newVy)
-        if newSpeed > targetSpeed && newSpeed > 0 {
-            let scale = targetSpeed / newSpeed
-            newVx *= scale
-            newVy *= scale
-        }
-
-        let newVelocity = CGVector(dx: newVx, dy: newVy)
+        // Directly set velocity along the terrain tangent without vector chord shortening:
+        let newVelocity = CGVector(dx: tangent.dx * targetSpeed, dy: tangent.dy * targetSpeed)
         for body in bike.allBodies {
             body.velocity = newVelocity
         }
+
+        // Keep wheels rolling synchronously without skidding against the ground
+        let rollAngularVelocity = -targetSpeed / GameTuning.Bike.collisionWheelRadius
+        bike.rearWheelBody.angularVelocity = rollAngularVelocity
+        bike.frontWheelBody.angularVelocity = rollAngularVelocity
     }
 
     private func updatePedalRoost() {

@@ -161,7 +161,7 @@ enum GameTuning {
         static let chassisFriction: CGFloat = 0.02
         static let tireFriction: CGFloat = 0.90
         static let restitution: CGFloat = 0.08
-        static let maximumSpeed: CGFloat = 1_600
+        static let maximumSpeed: CGFloat = 2_400
         static let maximumChassisAngularVelocity: CGFloat = 3.2
         static let groundedTolerance: CGFloat = 8
         /// A generous multiple of the bike's own resting size (wheels sit
@@ -571,9 +571,9 @@ enum GameTuning {
         /// Rider inputs add force or an equal-and-opposite torque couple to
         /// the vehicle; they never write velocity, change gravity, or lift
         /// the bike.
-        static let pedalForce: CGFloat = 1_200
-        static let pedalFadeSpeed: CGFloat = 1_400
-        static let pedalClimbForce: CGFloat = 2_200
+        static let pedalForce: CGFloat = 1_400
+        static let pedalFadeSpeed: CGFloat = 1_800
+        static let pedalClimbForce: CGFloat = 2_800
         static let groundLeanTorque: CGFloat = 90
         static let airLeanTorque: CGFloat = 65
     }
