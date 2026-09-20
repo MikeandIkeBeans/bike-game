@@ -66,6 +66,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private let skyLayer = SKNode()
+    private var backdropPhotos: [SKSpriteNode] = []
     private let alpineAtmosphere = SKSpriteNode(
         color: SKColor(red: 0.67, green: 0.82, blue: 0.96, alpha: 1),
         size: .zero
@@ -74,6 +75,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     private let terrainLayer = SKNode()
     private let effectsLayer = SKNode()
     private var roostTimer: TimeInterval = 0
+    private var windStreakTimer: TimeInterval = 0
     private lazy var dustTexture: SKTexture = {
         let diameter: CGFloat = 16
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: diameter, height: diameter))
@@ -283,6 +285,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         applyBraking()
         preserveTransitionMomentum()
         updatePedalRoost()
+        updateSpeedEffects()
         applyRiderLean()
         capVehicleMotion()
     }
@@ -361,7 +364,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         }
 
         let forwardSpeed = max(0, bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy)
-        let fadeSpeed = (terrainStream.mapMode == .megaJump) ? 3_200.0 : GameTuning.Handling.pedalFadeSpeed
+        let fadeSpeed = (terrainStream.mapMode == .megaJump) ? 4_500.0 : GameTuning.Handling.pedalFadeSpeed
         let forceFade = clamp(
             1 - forwardSpeed / fadeSpeed,
             0,
@@ -369,7 +372,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         )
         let climbLoad = max(tangent.dy, 0)
         let basePedal = (terrainStream.mapMode == .megaJump)
-            ? GameTuning.Handling.pedalForce * 2.8
+            ? GameTuning.Handling.pedalForce * 4.0
             : GameTuning.Handling.pedalForce
         let riderForce = (basePedal + GameTuning.Handling.pedalClimbForce * climbLoad) * forceFade
         guard riderForce > 0 else { return }
@@ -424,7 +427,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         // without inducing rotational pitch moments:
         if tangent.dy < -0.05 {
             let downhillSlopeAccel = GameTuning.Simulation.gravityAcceleration * (-tangent.dy)
-            let assistMultiplier: CGFloat = (terrainStream.mapMode == .megaJump) ? 2.8 : 1.5
+            let assistMultiplier: CGFloat = (terrainStream.mapMode == .megaJump) ? 3.5 : 1.5
             let accel = downhillSlopeAccel * assistMultiplier
             for body in bike.allBodies {
                 body.applyForce(CGVector(
@@ -585,13 +588,13 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func capVehicleMotion() {
-        let maxAllowedSpeed: CGFloat = (terrainStream.mapMode == .megaJump) ? 1_300.0 : GameTuning.Bike.maximumSpeed
-        let maxVerticalSpeed: CGFloat = (terrainStream.mapMode == .megaJump) ? 900.0 : 600.0
+        let maxForwardSpeed: CGFloat = (terrainStream.mapMode == .megaJump) ? 2_600.0 : GameTuning.Bike.maximumSpeed
+        let maxVerticalSpeed: CGFloat = (terrainStream.mapMode == .megaJump) ? 1_400.0 : 600.0
         for body in bike.allBodies {
-            let speed = vectorLength(body.velocity)
-            if speed > maxAllowedSpeed {
-                let scale = maxAllowedSpeed / speed
-                body.velocity = CGVector(dx: body.velocity.dx * scale, dy: body.velocity.dy * scale)
+            if body.velocity.dx > maxForwardSpeed {
+                body.velocity.dx = maxForwardSpeed
+            } else if body.velocity.dx < -maxForwardSpeed {
+                body.velocity.dx = -maxForwardSpeed
             }
             if body.velocity.dy > maxVerticalSpeed {
                 body.velocity.dy = maxVerticalSpeed
@@ -803,6 +806,14 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
 
         terrainStream.mapMode = mapMode
         bestDistance = UserDefaults.standard.integer(forKey: bestDistanceKey)
+        if mapMode == .megaJump {
+            physicsWorld.gravity = CGVector(
+                dx: 0,
+                dy: -850.0 / GameTuning.Simulation.spriteKitPointsPerMeter
+            )
+        } else {
+            physicsWorld.gravity = GameTuning.Simulation.gravity
+        }
         terrainStream.reset()
         bike.resetAppearance()
         bike.prepareForSpawn()
@@ -1165,14 +1176,23 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
 
     private func buildBackdrop() {
         skyLayer.removeAllChildren()
+        backdropPhotos.removeAll()
         let backdropWidth = max(size.width * 3, 1_200)
         let backdropHeight = max(size.height * 3, 1_000)
         let texture = SKTexture(imageNamed: "mountain-background.jpg")
         let textureSize = texture.size()
         let scale = max(backdropWidth / textureSize.width, backdropHeight / textureSize.height)
-        let photo = SKSpriteNode(texture: texture)
-        photo.size = CGSize(width: textureSize.width * scale, height: textureSize.height * scale)
-        skyLayer.addChild(photo)
+
+        let w = textureSize.width * scale
+        let h = textureSize.height * scale
+        for i in -1...1 {
+            let photo = SKSpriteNode(texture: texture)
+            photo.size = CGSize(width: w, height: h)
+            photo.position = CGPoint(x: CGFloat(i) * w, y: 0)
+            photo.zPosition = 0
+            skyLayer.addChild(photo)
+            backdropPhotos.append(photo)
+        }
 
         alpineAtmosphere.size = CGSize(width: backdropWidth, height: backdropHeight)
         alpineAtmosphere.blendMode = .screen
@@ -1379,6 +1399,53 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         cameraNode.position.x += (target.x - cameraNode.position.x) * amount
         cameraNode.position.y += (target.y - cameraNode.position.y) * amount
         alpineAtmosphere.alpha = alpineBiomeBlend * 0.62
+
+        // Parallax background mountain scrolling:
+        if let firstPhoto = backdropPhotos.first {
+            let photoWidth = firstPhoto.size.width
+            let parallaxFactor: CGFloat = 0.20
+            let scrollX = -fmod(cameraNode.position.x * parallaxFactor, photoWidth)
+            for (i, photo) in backdropPhotos.enumerated() {
+                photo.position.x = CGFloat(i - 1) * photoWidth + scrollX
+            }
+        }
+
+        // Dynamic high-speed air camera framing:
+        let targetScale: CGFloat = (!isGrounded && terrainStream.mapMode == .megaJump && bike.velocity.dx > 1000) ? 1.15 : 1.0
+        let scaleAmount = min(CGFloat(frameDelta) * 3.0, 1.0)
+        cameraNode.xScale += (targetScale - cameraNode.xScale) * scaleAmount
+        cameraNode.yScale = cameraNode.xScale
+    }
+
+    private func updateSpeedEffects() {
+        guard !isGrounded, bike.velocity.dx > 700 else { return }
+        windStreakTimer += frameDelta
+        guard windStreakTimer >= 0.035 else { return }
+        windStreakTimer = 0
+
+        let streak = SKShapeNode()
+        let path = CGMutablePath()
+        let streakLength = CGFloat.random(in: 140...280)
+        path.move(to: CGPoint(x: 0, y: 0))
+        path.addLine(to: CGPoint(x: streakLength, y: 0))
+        streak.path = path
+        streak.strokeColor = SKColor(white: 1.0, alpha: CGFloat.random(in: 0.40...0.80))
+        streak.lineWidth = CGFloat.random(in: 1.5...3.0)
+        streak.glowWidth = 1.0
+        streak.zPosition = 7
+
+        let spawnX = cameraNode.position.x + size.width * 0.55
+        let spawnY = bike.chassisPosition.y + CGFloat.random(in: -160...160)
+        streak.position = CGPoint(x: spawnX, y: spawnY)
+        effectsLayer.addChild(streak)
+
+        let flyDistance = size.width * 1.5
+        let speed = max(bike.velocity.dx * 1.6, 2200.0)
+        let duration = Double(flyDistance / speed)
+        streak.run(.sequence([
+            .moveBy(x: -flyDistance, y: CGFloat.random(in: -15...15), duration: duration),
+            .removeFromParent()
+        ]))
     }
 
     private func toast(_ text: String) {
