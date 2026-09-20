@@ -264,25 +264,25 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         if runState == .riding {
             bike.recoverTerrainPenetration(
                 terrainHeightAt: { [weak self] x in
-                    guard let self = self else { return 0 }
-                    return self.terrainStream.surfaceTerrainHeight(at: x) ?? self.terrainStream.terrainHeight(at: x)
+                    guard let self = self else { return -100_000 }
+                    return self.terrainStream.surfaceTerrainHeight(at: x) ?? -100_000
                 },
                 terrainSlopeAt: { [weak self] x in
                     guard let self = self else { return 0 }
-                    return self.terrainStream.surfaceTerrainSlope(at: x) ?? self.terrainStream.terrainSlope(at: x)
+                    return self.terrainStream.surfaceTerrainSlope(at: x) ?? 0
                 }
             )
 
             // Catastrophic tunneling failsafe: if a severe frame hitch or solver glitch
-            // ever places the chassis >60 units beneath the terrain line while NOT grounded,
+            // ever places the chassis >60 units beneath the physical terrain line while NOT grounded,
             // rescue the entire bike assembly back onto the trail with unified momentum across all bodies.
             let chassisX = bike.chassisPosition.x
             let chassisY = bike.chassisPosition.y
             guard chassisX.isFinite, chassisY.isFinite else { return }
-            let terrainY = terrainStream.surfaceTerrainHeight(at: chassisX) ?? terrainStream.terrainHeight(at: chassisX)
-            if !isGrounded && chassisY < terrainY - 60 {
+            guard let surfaceTerrainY = terrainStream.surfaceTerrainHeight(at: chassisX) else { return }
+            if !isGrounded && chassisY < surfaceTerrainY - 60 {
                 let attitude = terrainStream.supportAngle(at: chassisX)
-                let safeY = terrainY + bike.spawnClearance(for: attitude) + 2.0
+                let safeY = surfaceTerrainY + bike.spawnClearance(for: attitude) + 2.0
                 let currentSpeed = min(max(bike.velocity.dx, 100), GameTuning.Bike.maximumSpeed)
                 bike.reset(at: CGPoint(x: chassisX, y: safeY), attitude: attitude)
                 bike.activatePhysics()
@@ -412,7 +412,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         let targetSpeed = max(alongTrail, currentSpeed)
         guard targetSpeed > 40 else { return }
 
-        let maxClimbDy: CGFloat = (terrainStream.mapMode == .megaJump) ? 0.72 : 0.50
+        let maxClimbDy: CGFloat = (terrainStream.mapMode == .megaJump) ? 0.60 : 0.50
         let climbDy = min(tangent.dy, maxClimbDy)
         let climbDx = sqrt(max(0.01, 1.0 - climbDy * climbDy))
         let targetVx = climbDx * targetSpeed
@@ -430,7 +430,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         }
 
         // Hard clamp upward vertical velocity so a scoop can never launch the bike into orbit
-        let maxVerticalVy: CGFloat = (terrainStream.mapMode == .megaJump) ? 1_200.0 : 450.0
+        let maxVerticalVy: CGFloat = (terrainStream.mapMode == .megaJump) ? 1_000.0 : 450.0
         newVy = min(newVy, maxVerticalVy)
 
         let unifiedVelocity = CGVector(dx: newVx, dy: newVy)
