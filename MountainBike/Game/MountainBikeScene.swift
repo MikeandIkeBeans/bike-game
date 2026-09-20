@@ -279,8 +279,8 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             let chassisX = bike.chassisPosition.x
             let chassisY = bike.chassisPosition.y
             guard chassisX.isFinite, chassisY.isFinite else { return }
-            guard let surfaceTerrainY = terrainStream.surfaceTerrainHeight(at: chassisX) else { return }
-            if !isGrounded && chassisY < surfaceTerrainY - 60 {
+            if let surfaceTerrainY = terrainStream.surfaceTerrainHeight(at: chassisX),
+               !isGrounded && chassisY < surfaceTerrainY - 60 {
                 let attitude = terrainStream.supportAngle(at: chassisX)
                 let safeY = surfaceTerrainY + bike.spawnClearance(for: attitude) + 2.0
                 let currentSpeed = min(max(bike.velocity.dx, 100), GameTuning.Bike.maximumSpeed)
