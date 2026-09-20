@@ -181,22 +181,27 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     /// stays in place below for terrain retirement, which can tolerate that
     /// lag.
     private var isGrounded: Bool {
-        axleClearance(at: bike.rearAxlePosition) != nil
+        contacts.touches(bike.rearWheelBody)
+            || contacts.touches(bike.frontWheelBody)
+            || axleClearance(at: bike.rearAxlePosition) != nil
             || axleClearance(at: bike.frontAxlePosition) != nil
     }
 
     private var areBothWheelsGrounded: Bool {
-        axleClearance(at: bike.rearAxlePosition) != nil
-            && axleClearance(at: bike.frontAxlePosition) != nil
+        (contacts.touches(bike.rearWheelBody) || axleClearance(at: bike.rearAxlePosition) != nil)
+            && (contacts.touches(bike.frontWheelBody) || axleClearance(at: bike.frontAxlePosition) != nil)
     }
 
     private func axleClearance(at axlePosition: CGPoint) -> CGFloat? {
         guard let terrainY = terrainStream.surfaceTerrainHeight(at: axlePosition.x) else {
             return nil
         }
+        let slope = terrainStream.surfaceTerrainSlope(at: axlePosition.x) ?? 0
+        let slopeFactor = sqrt(1.0 + slope * slope)
+        let nominalRadius = GameTuning.Bike.collisionWheelRadius * slopeFactor
         let clearance = axlePosition.y - terrainY
-        let minClearance: CGFloat = -24
-        let maxClearance = GameTuning.Bike.collisionWheelRadius + GameTuning.Bike.groundedTolerance
+        let minClearance: CGFloat = -24 * slopeFactor
+        let maxClearance = nominalRadius + GameTuning.Bike.groundedTolerance * slopeFactor + 14.0
         return (clearance >= minClearance && clearance <= maxClearance) ? clearance : nil
     }
 
@@ -329,14 +334,15 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         }
 
         let forwardSpeed = max(0, bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy)
+        let fadeSpeed = (terrainStream.mapMode == .megaJump) ? 3_200.0 : GameTuning.Handling.pedalFadeSpeed
         let forceFade = clamp(
-            1 - forwardSpeed / GameTuning.Handling.pedalFadeSpeed,
+            1 - forwardSpeed / fadeSpeed,
             0,
             1
         )
         let climbLoad = max(tangent.dy, 0)
         let basePedal = (terrainStream.mapMode == .megaJump)
-            ? GameTuning.Handling.pedalForce * 2.2
+            ? GameTuning.Handling.pedalForce * 2.8
             : GameTuning.Handling.pedalForce
         let riderForce = (basePedal + GameTuning.Handling.pedalClimbForce * climbLoad) * forceFade
         guard riderForce > 0 else { return }
@@ -390,12 +396,16 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         // to overcome Box2D discrete edge-chain friction:
         if tangent.dy < -0.05 {
             let downhillSlopeAccel = (-GameTuning.Simulation.gravity.dy) * (-tangent.dy)
-            let assistMultiplier: CGFloat = (terrainStream.mapMode == .megaJump) ? 3.5 : 1.5
+            let assistMultiplier: CGFloat = (terrainStream.mapMode == .megaJump) ? 6.0 : 1.5
             let assistForce = downhillSlopeAccel * bike.chassisBody.mass * assistMultiplier
             bike.chassisBody.applyForce(CGVector(
                 dx: tangent.dx * assistForce,
                 dy: tangent.dy * assistForce
             ))
+            if terrainStream.mapMode == .megaJump {
+                bike.rearWheelBody.applyTorque(-assistForce * 0.15)
+                bike.frontWheelBody.applyTorque(-assistForce * 0.15)
+            }
         }
 
         let alongTrail = bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy
@@ -430,7 +440,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         }
 
         // Hard clamp upward vertical velocity so a scoop can never launch the bike into orbit
-        let maxVerticalVy: CGFloat = (terrainStream.mapMode == .megaJump) ? 1_000.0 : 450.0
+        let maxVerticalVy: CGFloat = (terrainStream.mapMode == .megaJump) ? 1_400.0 : 450.0
         newVy = min(newVy, maxVerticalVy)
 
         let unifiedVelocity = CGVector(dx: newVx, dy: newVy)

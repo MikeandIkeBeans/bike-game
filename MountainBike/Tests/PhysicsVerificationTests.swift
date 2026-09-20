@@ -873,8 +873,8 @@ struct TestSegment {
 func testMakeMegaJumpChunk(index: Int) -> [TestSegment] {
     let cycle = index / 5
     let phase = index % 5
-    let ox = CGFloat(cycle) * 20400.0
-    let oy = CGFloat(cycle) * -10207.5
+    let ox = CGFloat(cycle) * 20300.0
+    let oy = CGFloat(cycle) * -10607.5
 
     switch phase {
     case 0:
@@ -889,21 +889,21 @@ func testMakeMegaJumpChunk(index: Int) -> [TestSegment] {
             TestSegment(start: CGPoint(x: 2360 + ox, y: -1020 + oy), end: CGPoint(x: 3360 + ox, y: -1520 + oy), startSlope: -1.0, endSlope: 0.0),
             TestSegment(start: CGPoint(x: 3360 + ox, y: -1520 + oy), end: CGPoint(x: 3860 + ox, y: -1400 + oy), startSlope: 0.0, endSlope: 0.48),
             TestSegment(start: CGPoint(x: 3860 + ox, y: -1400 + oy), end: CGPoint(x: 4000 + ox, y: -1332.8 + oy), startSlope: 0.48, endSlope: 0.48),
-            TestSegment(start: CGPoint(x: 4000 + ox, y: -1332.8 + oy), end: CGPoint(x: 5500 + ox, y: -2050.0 + oy), startSlope: 0.48, endSlope: -0.55, isSurface: false)
+            TestSegment(start: CGPoint(x: 4000 + ox, y: -1332.8 + oy), end: CGPoint(x: 5400 + ox, y: -2450.0 + oy), startSlope: 0.48, endSlope: -0.55, isSurface: false)
         ]
     case 2:
         return [
-            TestSegment(start: CGPoint(x: 5500 + ox, y: -2050.0 + oy), end: CGPoint(x: 9500 + ox, y: -4250.0 + oy), startSlope: -0.55, endSlope: -0.55)
+            TestSegment(start: CGPoint(x: 5400 + ox, y: -2450.0 + oy), end: CGPoint(x: 9400 + ox, y: -4650.0 + oy), startSlope: -0.55, endSlope: -0.55)
         ]
     case 3:
         return [
-            TestSegment(start: CGPoint(x: 9500 + ox, y: -4250.0 + oy), end: CGPoint(x: 13500 + ox, y: -6450.0 + oy), startSlope: -0.55, endSlope: -0.55)
+            TestSegment(start: CGPoint(x: 9400 + ox, y: -4650.0 + oy), end: CGPoint(x: 13400 + ox, y: -6850.0 + oy), startSlope: -0.55, endSlope: -0.55)
         ]
     case 4:
         return [
-            TestSegment(start: CGPoint(x: 13500 + ox, y: -6450.0 + oy), end: CGPoint(x: 17500 + ox, y: -8650.0 + oy), startSlope: -0.55, endSlope: -0.55),
-            TestSegment(start: CGPoint(x: 17500 + ox, y: -8650.0 + oy), end: CGPoint(x: 18800 + ox, y: -9007.5 + oy), startSlope: -0.55, endSlope: 0.0),
-            TestSegment(start: CGPoint(x: 18800 + ox, y: -9007.5 + oy), end: CGPoint(x: 19920 + ox, y: -9007.5 + oy), startSlope: 0.0, endSlope: 0.0)
+            TestSegment(start: CGPoint(x: 13400 + ox, y: -6850.0 + oy), end: CGPoint(x: 17400 + ox, y: -9050.0 + oy), startSlope: -0.55, endSlope: -0.55),
+            TestSegment(start: CGPoint(x: 17400 + ox, y: -9050.0 + oy), end: CGPoint(x: 18700 + ox, y: -9407.5 + oy), startSlope: -0.55, endSlope: 0.0),
+            TestSegment(start: CGPoint(x: 18700 + ox, y: -9407.5 + oy), end: CGPoint(x: 19820 + ox, y: -9407.5 + oy), startSlope: 0.0, endSlope: 0.0)
         ]
     default:
         return []
