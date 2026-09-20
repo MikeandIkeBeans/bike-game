@@ -329,9 +329,6 @@ final class BikeNode: SKNode {
         if maxDeltaY > 0 && maxDeltaY <= 30 {
             for node in [chassis, swingarm, frontFork, rearWheel, frontWheel] {
                 node.position.y += maxDeltaY
-                if let body = node.physicsBody, body.velocity.dy < 0 {
-                    body.velocity.dy = 0
-                }
             }
         }
     }

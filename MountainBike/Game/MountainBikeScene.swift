@@ -195,7 +195,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             return nil
         }
         let clearance = axlePosition.y - terrainY
-        let minClearance = -GameTuning.Terrain.wheelPenetrationRecoveryTrigger
+        let minClearance: CGFloat = -24
         let maxClearance = GameTuning.Bike.collisionWheelRadius + GameTuning.Bike.groundedTolerance
         return (clearance >= minClearance && clearance <= maxClearance) ? clearance : nil
     }
@@ -252,6 +252,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         terrainStream.ensureTerrainAhead(of: bike.chassisPosition.x)
         applyPedalDrive()
         applyBraking()
+        preserveTransitionMomentum()
         updatePedalRoost()
         applyRiderLean()
         capVehicleMotion()
@@ -271,6 +272,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
                     return self.terrainStream.surfaceTerrainSlope(at: x) ?? self.terrainStream.terrainSlope(at: x)
                 }
             )
+            preserveTransitionMomentum()
 
             // Catastrophic tunneling failsafe: if a severe frame hitch or solver glitch
             // ever places the chassis >60 units beneath the terrain line while NOT grounded,
@@ -307,7 +309,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
 
     // MARK: - Physics input and state
 
-    /// PEDAL applies a tangential rider force only while the compound bike is
+    /// PEDAL applies a tangential rider acceleration only while the compound bike is
     /// genuinely in terrain contact. Downhill speed remains gravity and
     /// collision driven; pedalling cannot accelerate an air gap.
     private func applyPedalDrive() {
@@ -337,53 +339,44 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         let riderForce = (GameTuning.Handling.pedalForce + GameTuning.Handling.pedalClimbForce * climbLoad) * forceFade
         guard riderForce > 0 else { return }
 
-        // Apply force across all bodies proportional to mass for smooth, unified acceleration
-        let forceVector = CGVector(
-            dx: tangent.dx * riderForce,
-            dy: tangent.dy * riderForce
-        )
         let totalMass: CGFloat = GameTuning.Bike.chassisMass
             + GameTuning.Bike.swingarmMass
             + GameTuning.Bike.rearWheelMass
             + GameTuning.Bike.frontForkMass
             + GameTuning.Bike.frontWheelMass
 
+        // Apply unified tangential velocity acceleration directly across all bodies
+        // so Box2D joint limits and edge friction do not dissipate climbing propulsion.
+        let pedalAccel = riderForce / totalMass
+        let deltaV = pedalAccel * CGFloat(frameDelta)
+
         for body in bike.allBodies {
             body.isResting = false
-            let massFraction = body.mass / totalMass
-            body.applyForce(CGVector(
-                dx: forceVector.dx * massFraction,
-                dy: forceVector.dy * massFraction
-            ))
+            body.velocity.dx += tangent.dx * deltaV
+            body.velocity.dy += tangent.dy * deltaV
         }
     }
 
-    /// Rear wheel braking applied while grounded when leaning back (or pressing brake key).
-    /// Decelerates the bike along the trail tangent, decreases cached rolling momentum,
+    /// Rear wheel braking applied while grounded when pressing brake key.
+    /// Decelerates the bike along the trail tangent, decreases rolling momentum,
     /// and allows controlled speed management on technical trails.
     private func applyBraking() {
         guard isGrounded, keyboardBrakeHeld, let tangent = pedalSupportTangent() else { return }
         let alongTrail = bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy
         guard alongTrail > 20 else { return }
 
-        // Progressive rear wheel braking force applied smoothly across all bodies
-        let brakeForceMagnitude: CGFloat = 600
-        let forceVector = CGVector(
-            dx: -tangent.dx * brakeForceMagnitude,
-            dy: -tangent.dy * brakeForceMagnitude
-        )
+        let brakeForceMagnitude: CGFloat = 800
         let totalMass: CGFloat = GameTuning.Bike.chassisMass
             + GameTuning.Bike.swingarmMass
             + GameTuning.Bike.rearWheelMass
             + GameTuning.Bike.frontForkMass
             + GameTuning.Bike.frontWheelMass
 
+        let brakeDeltaV = (brakeForceMagnitude / totalMass) * CGFloat(frameDelta)
+
         for body in bike.allBodies {
-            let massFraction = body.mass / totalMass
-            body.applyForce(CGVector(
-                dx: forceVector.dx * massFraction,
-                dy: forceVector.dy * massFraction
-            ))
+            body.velocity.dx -= tangent.dx * brakeDeltaV
+            body.velocity.dy -= tangent.dy * brakeDeltaV
         }
 
         // Emit brake skid dust if braking at speed
@@ -393,6 +386,47 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
                 x: bike.rearAxlePosition.x,
                 y: bike.rearAxlePosition.y - GameTuning.Bike.collisionWheelRadius
             ))
+        }
+    }
+
+    /// Conserves scalar kinetic energy through terrain transitions (scoops, troughs, and kicker faces).
+    /// Pure Box2D edge-chain collisions inelastically absorb normal velocity and scrub tangential
+    /// velocity on concave curves. This aligns velocity with the terrain tangent while strictly
+    /// conserving scalar speed (newSpeed <= targetSpeed), preventing energy destruction without
+    /// creating artificial boosts. Also ensures downhill gravity acceleration is not lost to edge vertex drag.
+    private func preserveTransitionMomentum() {
+        guard isGrounded, !keyboardBrakeHeld, let tangent = pedalSupportTangent() else { return }
+        guard tangent.dx > 0.1 else { return }
+
+        let currentSpeed = hypot(bike.velocity.dx, bike.velocity.dy)
+        guard currentSpeed > 30 else { return }
+
+        let alongTrail = bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy
+        guard alongTrail > 0 else { return }
+
+        // On downhills (tangent.dy < 0), ensure Newtonian gravity acceleration along the slope
+        // is not scrubbed by Box2D discrete edge-chain vertex collisions.
+        let downhillAccel = max(0, -tangent.dy) * (-GameTuning.Simulation.gravity.dy)
+        let downhillDeltaV = downhillAccel * CGFloat(frameDelta)
+
+        let targetSpeed = max(alongTrail + downhillDeltaV, currentSpeed)
+        guard targetSpeed > 30 else { return }
+
+        let targetVelocity = CGVector(dx: tangent.dx * targetSpeed, dy: tangent.dy * targetSpeed)
+        let blend: CGFloat = min(CGFloat(frameDelta) * 35.0, 0.85)
+        var newVx = bike.velocity.dx * (1 - blend) + targetVelocity.dx * blend
+        var newVy = bike.velocity.dy * (1 - blend) + targetVelocity.dy * blend
+
+        let newSpeed = hypot(newVx, newVy)
+        if newSpeed > targetSpeed && newSpeed > 0 {
+            let scale = targetSpeed / newSpeed
+            newVx *= scale
+            newVy *= scale
+        }
+
+        let newVelocity = CGVector(dx: newVx, dy: newVy)
+        for body in bike.allBodies {
+            body.velocity = newVelocity
         }
     }
 
