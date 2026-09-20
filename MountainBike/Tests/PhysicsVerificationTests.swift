@@ -735,11 +735,11 @@ suite.assert(severeNoseDive.frameStrike, "Severe nose-dive frame strike (>= 1.20
 let severeLoopOut = evaluateRunCrash(bothWheelsGrounded: false, isGrounded: true, chassisContact: true, chassisRotation: 1.30, supportAngle: 0.0)
 suite.assert(severeLoopOut.frameStrike, "Severe loop-out frame strike (>= 1.20 rad) correctly triggers crash")
 
-// 7. Braking deceleration: leaning back grounded applies backward force along trail tangent
+// 7. Braking deceleration: dedicated brake applies backward force along trail tangent
 func simulateBraking(velocity: CGVector, tangent: CGVector, totalMass: CGFloat = 6.6, delta: TimeInterval = 0.016) -> CGVector {
     let alongTrail = velocity.dx * tangent.dx + velocity.dy * tangent.dy
     guard alongTrail > 20 else { return velocity }
-    let brakeForce: CGFloat = 1_800
+    let brakeForce: CGFloat = 600
     let decel = (brakeForce / totalMass) * CGFloat(delta)
     let newSpeed = max(0, alongTrail - decel)
     return CGVector(dx: tangent.dx * newSpeed, dy: tangent.dy * newSpeed)
@@ -797,8 +797,8 @@ func simulateUphillPedal(
     tangent: CGVector,
     pedalHeld: Bool,
     isGrounded: Bool,
-    pedalForce: CGFloat = 450,
-    pedalClimbForce: CGFloat = 650,
+    pedalForce: CGFloat = 1_200,
+    pedalClimbForce: CGFloat = 2_200,
     totalMass: CGFloat = 6.6,
     delta: TimeInterval = 0.016
 ) -> CGVector {
@@ -813,7 +813,7 @@ func simulateUphillPedal(
     }
 
     let forwardSpeed = max(0, vel.dx * tangent.dx + vel.dy * tangent.dy)
-    let forceFade = max(0, min(1, 1 - forwardSpeed / 1_000))
+    let forceFade = max(0, min(1, 1 - forwardSpeed / 1_400))
     let climbLoad = max(tangent.dy, 0)
     let riderForce = (pedalForce + pedalClimbForce * climbLoad) * forceFade
 

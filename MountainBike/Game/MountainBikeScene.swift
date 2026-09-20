@@ -141,6 +141,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     private var keyboardBackHeld = false
     private var keyboardForwardHeld = false
     private var keyboardPedalHeld = false
+    private var keyboardBrakeHeld = false
     private var wasGrounded = true
     private var airborneTime: TimeInterval = 0
     private var airborneStartX: CGFloat = 0
@@ -361,12 +362,12 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     /// Decelerates the bike along the trail tangent, decreases cached rolling momentum,
     /// and allows controlled speed management on technical trails.
     private func applyBraking() {
-        guard isGrounded, leanInput > 0, let tangent = pedalSupportTangent() else { return }
+        guard isGrounded, keyboardBrakeHeld, let tangent = pedalSupportTangent() else { return }
         let alongTrail = bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy
         guard alongTrail > 20 else { return }
 
         // Progressive rear wheel braking force applied smoothly across all bodies
-        let brakeForceMagnitude: CGFloat = 1_800
+        let brakeForceMagnitude: CGFloat = 600
         let forceVector = CGVector(
             dx: -tangent.dx * brakeForceMagnitude,
             dy: -tangent.dy * brakeForceMagnitude
@@ -560,6 +561,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         keyboardBackHeld = false
         keyboardForwardHeld = false
         keyboardPedalHeld = false
+        keyboardBrakeHeld = false
         elapsedRunTime = 0
         wasGrounded = true
         airborneTime = 0
@@ -631,6 +633,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         keyboardBackHeld = false
         keyboardForwardHeld = false
         keyboardPedalHeld = false
+        keyboardBrakeHeld = false
         airborneTime = 0
         airborneStartX = 0
         bike.freezePhysics()
@@ -724,8 +727,11 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             guard let key = press.key else { continue }
             let chars = key.charactersIgnoringModifiers.lowercased()
             switch chars {
-            case "a", UIKeyCommand.inputLeftArrow.lowercased(), "s", UIKeyCommand.inputDownArrow.lowercased():
+            case "a", UIKeyCommand.inputLeftArrow.lowercased():
                 keyboardBackHeld = true
+                handled = true
+            case "s", UIKeyCommand.inputDownArrow.lowercased():
+                keyboardBrakeHeld = true
                 handled = true
             case "d", UIKeyCommand.inputRightArrow.lowercased():
                 keyboardForwardHeld = true
@@ -778,8 +784,11 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             guard let key = press.key else { continue }
             let chars = key.charactersIgnoringModifiers.lowercased()
             switch chars {
-            case "a", UIKeyCommand.inputLeftArrow.lowercased(), "s", UIKeyCommand.inputDownArrow.lowercased():
+            case "a", UIKeyCommand.inputLeftArrow.lowercased():
                 keyboardBackHeld = false
+                handled = true
+            case "s", UIKeyCommand.inputDownArrow.lowercased():
+                keyboardBrakeHeld = false
                 handled = true
             case "d", UIKeyCommand.inputRightArrow.lowercased():
                 keyboardForwardHeld = false

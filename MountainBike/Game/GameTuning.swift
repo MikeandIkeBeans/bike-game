@@ -121,7 +121,7 @@ enum GameTuning {
         /// Guards the spawn calculation if an authored rail ever approaches a
         /// vertical tangent. Normal course slopes stay well above this value.
         static let minimumSpawnCosine: CGFloat = 0.35
-        static let startVelocity = CGVector.zero
+        static let startVelocity = CGVector(dx: 120, dy: 0)
         static let frameGuardRadius: CGFloat = 0
         static let frameGuardOffsetY: CGFloat = 0
 
@@ -571,9 +571,9 @@ enum GameTuning {
         /// Rider inputs add force or an equal-and-opposite torque couple to
         /// the vehicle; they never write velocity, change gravity, or lift
         /// the bike.
-        static let pedalForce: CGFloat = 450
-        static let pedalFadeSpeed: CGFloat = 1_000
-        static let pedalClimbForce: CGFloat = 650
+        static let pedalForce: CGFloat = 1_200
+        static let pedalFadeSpeed: CGFloat = 1_400
+        static let pedalClimbForce: CGFloat = 2_200
         static let groundLeanTorque: CGFloat = 90
         static let airLeanTorque: CGFloat = 65
     }
