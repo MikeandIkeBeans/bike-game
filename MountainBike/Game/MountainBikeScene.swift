@@ -117,6 +117,9 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     private let forwardControl = SKNode()
 
     private(set) var mapMode: TerrainStreamController.GameMapMode = {
+        if ProcessInfo.processInfo.arguments.contains("--mega-jump") {
+            return .megaJump
+        }
         if let saved = UserDefaults.standard.string(forKey: "MountainBike.mapMode"),
            let mode = TerrainStreamController.GameMapMode(rawValue: saved) {
             return mode

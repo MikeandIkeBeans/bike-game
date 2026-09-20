@@ -476,8 +476,8 @@ final class TerrainStreamController {
     ) -> (segments: [TerrainSegment], cursor: TerrainCursor) {
         let cycle = chunkIndex / 5
         let phase = chunkIndex % 5
-        let ox = CGFloat(cycle) * 21100.0
-        let oy = CGFloat(cycle) * -9957.5
+        let ox = CGFloat(cycle) * 18100.0
+        let oy = CGFloat(cycle) * -6003.0
 
         let segments: [TerrainSegment]
         switch phase {
@@ -526,73 +526,73 @@ final class TerrainStreamController {
                 ),
                 TerrainSegment(
                     start: CGPoint(x: 4020 + ox, y: -750 + oy),
-                    end: CGPoint(x: 4620 + ox, y: -606 + oy),
+                    end: CGPoint(x: 4620 + ox, y: -590 + oy),
                     startSlope: 0.0,
-                    endSlope: 0.48,
+                    endSlope: 0.40,
                     isLinear: false,
                     maximumUphillSlope: 1.2
                 ),
                 TerrainSegment(
-                    start: CGPoint(x: 4620 + ox, y: -606 + oy),
-                    end: CGPoint(x: 4800 + ox, y: -519.6 + oy),
-                    startSlope: 0.48,
-                    endSlope: 0.48,
+                    start: CGPoint(x: 4620 + ox, y: -590 + oy),
+                    end: CGPoint(x: 4800 + ox, y: -518.0 + oy),
+                    startSlope: 0.40,
+                    endSlope: 0.40,
                     isLinear: true,
                     maximumUphillSlope: 1.2
                 ),
                 TerrainSegment(
-                    start: CGPoint(x: 4800 + ox, y: -519.6 + oy),
-                    end: CGPoint(x: 6200 + ox, y: -1800.0 + oy),
-                    startSlope: 0.48,
-                    endSlope: -0.55,
+                    start: CGPoint(x: 4800 + ox, y: -518.0 + oy),
+                    end: CGPoint(x: 6200 + ox, y: -750.0 + oy),
+                    startSlope: 0.40,
+                    endSlope: -0.42,
                     isLinear: true,
                     isSurface: false,
                     maximumUphillSlope: 1.2
                 )
             ]
         case 2:
-            // Upper expansive downhill landing catch zone (4,000 pt = 286 m)
+            // Upper landing catch runway (3,000 pt)
             segments = [
                 TerrainSegment(
-                    start: CGPoint(x: 6200 + ox, y: -1800.0 + oy),
-                    end: CGPoint(x: 10200 + ox, y: -4000.0 + oy),
-                    startSlope: -0.55,
-                    endSlope: -0.55,
+                    start: CGPoint(x: 6200 + ox, y: -750.0 + oy),
+                    end: CGPoint(x: 9200 + ox, y: -2010.0 + oy),
+                    startSlope: -0.42,
+                    endSlope: -0.42,
                     isLinear: false
                 )
             ]
         case 3:
-            // Middle expansive downhill landing catch zone (4,000 pt = 286 m)
+            // Middle landing catch runway (3,000 pt)
             segments = [
                 TerrainSegment(
-                    start: CGPoint(x: 10200 + ox, y: -4000.0 + oy),
-                    end: CGPoint(x: 14200 + ox, y: -6200.0 + oy),
-                    startSlope: -0.55,
-                    endSlope: -0.55,
+                    start: CGPoint(x: 9200 + ox, y: -2010.0 + oy),
+                    end: CGPoint(x: 12200 + ox, y: -3270.0 + oy),
+                    startSlope: -0.42,
+                    endSlope: -0.42,
                     isLinear: false
                 )
             ]
         case 4:
-            // Lower catch zone (4,000 pt), smooth deceleration runout scoop, and flat roll-in connecting to the next cycle
+            // Lower catch runway (3,000 pt), smooth deceleration runout scoop, and flat roll-in connecting to the next cycle
             segments = [
                 TerrainSegment(
-                    start: CGPoint(x: 14200 + ox, y: -6200.0 + oy),
-                    end: CGPoint(x: 18200 + ox, y: -8400.0 + oy),
-                    startSlope: -0.55,
-                    endSlope: -0.55,
+                    start: CGPoint(x: 12200 + ox, y: -3270.0 + oy),
+                    end: CGPoint(x: 15200 + ox, y: -4530.0 + oy),
+                    startSlope: -0.42,
+                    endSlope: -0.42,
                     isLinear: false
                 ),
                 TerrainSegment(
-                    start: CGPoint(x: 18200 + ox, y: -8400.0 + oy),
-                    end: CGPoint(x: 19500 + ox, y: -8757.5 + oy),
-                    startSlope: -0.55,
+                    start: CGPoint(x: 15200 + ox, y: -4530.0 + oy),
+                    end: CGPoint(x: 16500 + ox, y: -4803.0 + oy),
+                    startSlope: -0.42,
                     endSlope: 0.0,
                     isLinear: false,
                     maximumUphillSlope: 1.2
                 ),
                 TerrainSegment(
-                    start: CGPoint(x: 19500 + ox, y: -8757.5 + oy),
-                    end: CGPoint(x: 20620 + ox, y: -8757.5 + oy),
+                    start: CGPoint(x: 16500 + ox, y: -4803.0 + oy),
+                    end: CGPoint(x: 17620 + ox, y: -4803.0 + oy),
                     startSlope: 0.0,
                     endSlope: 0.0,
                     isLinear: false,

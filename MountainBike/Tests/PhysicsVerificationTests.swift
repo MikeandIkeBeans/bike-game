@@ -873,8 +873,8 @@ struct TestSegment {
 func testMakeMegaJumpChunk(index: Int) -> [TestSegment] {
     let cycle = index / 5
     let phase = index % 5
-    let ox = CGFloat(cycle) * 21100.0
-    let oy = CGFloat(cycle) * -9957.5
+    let ox = CGFloat(cycle) * 18100.0
+    let oy = CGFloat(cycle) * -6003.0
 
     switch phase {
     case 0:
@@ -887,23 +887,23 @@ func testMakeMegaJumpChunk(index: Int) -> [TestSegment] {
         return [
             TestSegment(start: CGPoint(x: 2220 + ox, y: 30 + oy), end: CGPoint(x: 2820 + ox, y: -360 + oy), startSlope: -0.65, endSlope: -0.65),
             TestSegment(start: CGPoint(x: 2820 + ox, y: -360 + oy), end: CGPoint(x: 4020 + ox, y: -750 + oy), startSlope: -0.65, endSlope: 0.0),
-            TestSegment(start: CGPoint(x: 4020 + ox, y: -750 + oy), end: CGPoint(x: 4620 + ox, y: -606 + oy), startSlope: 0.0, endSlope: 0.48),
-            TestSegment(start: CGPoint(x: 4620 + ox, y: -606 + oy), end: CGPoint(x: 4800 + ox, y: -519.6 + oy), startSlope: 0.48, endSlope: 0.48),
-            TestSegment(start: CGPoint(x: 4800 + ox, y: -519.6 + oy), end: CGPoint(x: 6200 + ox, y: -1800.0 + oy), startSlope: 0.48, endSlope: -0.55, isSurface: false)
+            TestSegment(start: CGPoint(x: 4020 + ox, y: -750 + oy), end: CGPoint(x: 4620 + ox, y: -590 + oy), startSlope: 0.0, endSlope: 0.40),
+            TestSegment(start: CGPoint(x: 4620 + ox, y: -590 + oy), end: CGPoint(x: 4800 + ox, y: -518.0 + oy), startSlope: 0.40, endSlope: 0.40),
+            TestSegment(start: CGPoint(x: 4800 + ox, y: -518.0 + oy), end: CGPoint(x: 6200 + ox, y: -750.0 + oy), startSlope: 0.40, endSlope: -0.42, isSurface: false)
         ]
     case 2:
         return [
-            TestSegment(start: CGPoint(x: 6200 + ox, y: -1800.0 + oy), end: CGPoint(x: 10200 + ox, y: -4000.0 + oy), startSlope: -0.55, endSlope: -0.55)
+            TestSegment(start: CGPoint(x: 6200 + ox, y: -750.0 + oy), end: CGPoint(x: 9200 + ox, y: -2010.0 + oy), startSlope: -0.42, endSlope: -0.42)
         ]
     case 3:
         return [
-            TestSegment(start: CGPoint(x: 10200 + ox, y: -4000.0 + oy), end: CGPoint(x: 14200 + ox, y: -6200.0 + oy), startSlope: -0.55, endSlope: -0.55)
+            TestSegment(start: CGPoint(x: 9200 + ox, y: -2010.0 + oy), end: CGPoint(x: 12200 + ox, y: -3270.0 + oy), startSlope: -0.42, endSlope: -0.42)
         ]
     case 4:
         return [
-            TestSegment(start: CGPoint(x: 14200 + ox, y: -6200.0 + oy), end: CGPoint(x: 18200 + ox, y: -8400.0 + oy), startSlope: -0.55, endSlope: -0.55),
-            TestSegment(start: CGPoint(x: 18200 + ox, y: -8400.0 + oy), end: CGPoint(x: 19500 + ox, y: -8757.5 + oy), startSlope: -0.55, endSlope: 0.0),
-            TestSegment(start: CGPoint(x: 19500 + ox, y: -8757.5 + oy), end: CGPoint(x: 20620 + ox, y: -8757.5 + oy), startSlope: 0.0, endSlope: 0.0)
+            TestSegment(start: CGPoint(x: 12200 + ox, y: -3270.0 + oy), end: CGPoint(x: 15200 + ox, y: -4530.0 + oy), startSlope: -0.42, endSlope: -0.42),
+            TestSegment(start: CGPoint(x: 15200 + ox, y: -4530.0 + oy), end: CGPoint(x: 16500 + ox, y: -4803.0 + oy), startSlope: -0.42, endSlope: 0.0),
+            TestSegment(start: CGPoint(x: 16500 + ox, y: -4803.0 + oy), end: CGPoint(x: 17620 + ox, y: -4803.0 + oy), startSlope: 0.0, endSlope: 0.0)
         ]
     default:
         return []
@@ -927,7 +927,7 @@ suite.assertEqual(testMakeMegaJumpChunk(index: 1)[0].endSlope, -0.65, "Downhill 
 let chunk1 = testMakeMegaJumpChunk(index: 1)
 let launchSeg = chunk1[3] // snappy kicker ramp
 suite.assert(launchSeg.endSlope <= 0.55, "Launch ramp has steep, mega-launching angle: \(launchSeg.endSlope) (~25.6°)")
-let rampGain = launchSeg.end.y - chunk1[1].end.y // y = -519.6 - (-750) = 230.4
+let rampGain = launchSeg.end.y - chunk1[1].end.y // y = -518 - (-750) = 232 pt
 suite.assert(rampGain <= 250.0, "Launch ramp provides smooth elevation gain: \(rampGain) <= 250 pt")
 suite.assert(!chunk1[4].isSurface, "Launch kicker terminates with an air gap (isSurface == false) to ensure ballistic flight")
 let gapLengthMeters = (chunk1[4].end.x - chunk1[4].start.x) / 14.0
@@ -938,7 +938,7 @@ let chunk2 = testMakeMegaJumpChunk(index: 2)
 let chunk4 = testMakeMegaJumpChunk(index: 4)
 let landingCatchLen = (chunk4[0].end.x - chunk2[0].start.x)
 suite.assert(landingCatchLen >= 8000.0, "Landing catch zone is expansive: \(landingCatchLen) >= 8000 pt")
-suite.assertEqual(chunk2[0].startSlope, -0.55, "Landing catch slope is smooth -0.55")
+suite.assertEqual(chunk2[0].startSlope, -0.42, "Landing catch slope is smooth -0.42")
 
 // 5. C1 Continuity check across 15 chunks (3 full cycles)
 var prevEnd: CGPoint?
