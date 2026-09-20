@@ -856,14 +856,16 @@ struct TestSegment {
     let startSlope: CGFloat
     let endSlope: CGFloat
     let isLinear: Bool
+    let isSurface: Bool
     let maximumUphillSlope: CGFloat?
 
-    init(start: CGPoint, end: CGPoint, startSlope: CGFloat, endSlope: CGFloat, isLinear: Bool = false, maximumUphillSlope: CGFloat? = 1.2) {
+    init(start: CGPoint, end: CGPoint, startSlope: CGFloat, endSlope: CGFloat, isLinear: Bool = false, isSurface: Bool = true, maximumUphillSlope: CGFloat? = 1.2) {
         self.start = start
         self.end = end
         self.startSlope = startSlope
         self.endSlope = endSlope
         self.isLinear = isLinear
+        self.isSurface = isSurface
         self.maximumUphillSlope = maximumUphillSlope
     }
 }
@@ -887,7 +889,7 @@ func testMakeMegaJumpChunk(index: Int) -> [TestSegment] {
             TestSegment(start: CGPoint(x: 2360 + ox, y: -1020 + oy), end: CGPoint(x: 3360 + ox, y: -1520 + oy), startSlope: -1.0, endSlope: 0.0),
             TestSegment(start: CGPoint(x: 3360 + ox, y: -1520 + oy), end: CGPoint(x: 3860 + ox, y: -1405 + oy), startSlope: 0.0, endSlope: 0.46),
             TestSegment(start: CGPoint(x: 3860 + ox, y: -1405 + oy), end: CGPoint(x: 3990 + ox, y: -1345.2 + oy), startSlope: 0.46, endSlope: 0.46),
-            TestSegment(start: CGPoint(x: 3990 + ox, y: -1345.2 + oy), end: CGPoint(x: 4110 + ox, y: -1350.6 + oy), startSlope: 0.46, endSlope: -0.55)
+            TestSegment(start: CGPoint(x: 3990 + ox, y: -1345.2 + oy), end: CGPoint(x: 4110 + ox, y: -1350.6 + oy), startSlope: 0.46, endSlope: -0.55, isSurface: false)
         ]
     case 2:
         return [
@@ -926,6 +928,7 @@ let launchSeg = chunk1[3] // snappy kicker ramp
 suite.assert(launchSeg.endSlope <= 0.50, "Launch ramp has fast, forward-launching angle: \(launchSeg.endSlope) <= 0.50 (~24.7°)")
 let rampGain = launchSeg.end.y - chunk1[1].end.y // y = -1345.2 - (-1520) = 174.8
 suite.assert(rampGain <= 200.0, "Launch ramp is rollable & smooth (does not hit a vertical wall): \(rampGain) <= 200 pt")
+suite.assert(!chunk1[4].isSurface, "Launch kicker terminates with an air gap (isSurface == false) to ensure ballistic flight")
 
 // 4. Landing catch runway length
 let chunk2 = testMakeMegaJumpChunk(index: 2)

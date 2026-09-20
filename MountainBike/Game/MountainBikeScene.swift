@@ -401,28 +401,25 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         let normalVelocity = bike.velocity.dx * normal.dx + bike.velocity.dy * normal.dy
         guard normalVelocity < -8 else { return }
 
-        // Conserve scalar kinetic energy into the curve tangent
+        // In a concave compression (trough / scoop), normal velocity is absorbed by Box2D contact.
+        // Assist tangential momentum smoothly through physical forces rather than direct velocity assignment,
+        // preventing suspension spring over-extension and catapult launches into space.
         let targetSpeed = max(alongTrail, currentSpeed)
-        guard targetSpeed > 40 else { return }
-
-        let targetVelocity = CGVector(dx: tangent.dx * targetSpeed, dy: tangent.dy * targetSpeed)
-        let blend: CGFloat = min(CGFloat(frameDelta) * 25.0, 0.75)
-        let newVx = bike.chassisBody.velocity.dx * (1 - blend) + targetVelocity.dx * blend
-        let newVy = bike.chassisBody.velocity.dy * (1 - blend) + targetVelocity.dy * blend
-
-        let newSpeed = hypot(newVx, newVy)
-        let clampedVx: CGFloat
-        let clampedVy: CGFloat
-        if newSpeed > targetSpeed && newSpeed > 0 {
-            let scale = targetSpeed / newSpeed
-            clampedVx = newVx * scale
-            clampedVy = newVy * scale
-        } else {
-            clampedVx = newVx
-            clampedVy = newVy
+        let speedDeficit = targetSpeed - alongTrail
+        if speedDeficit > 2 {
+            let totalMass: CGFloat = GameTuning.Bike.chassisMass
+                + GameTuning.Bike.swingarmMass
+                + GameTuning.Bike.rearWheelMass
+                + GameTuning.Bike.frontForkMass
+                + GameTuning.Bike.frontWheelMass
+            let assistAccel = speedDeficit * 12.0
+            let assistForce = min(assistAccel * totalMass, 1200.0)
+            bike.chassisBody.applyForce(CGVector(
+                dx: tangent.dx * assistForce,
+                dy: tangent.dy * assistForce
+            ))
+            bike.rearWheelBody.applyTorque(-assistForce * 0.35)
         }
-
-        bike.chassisBody.velocity = CGVector(dx: clampedVx, dy: clampedVy)
     }
 
     private func updatePedalRoost() {
@@ -458,8 +455,8 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         return nil
     }
 
-    /// Lean applies physical pitch torque to the one-piece bike body. It has
-    /// no linear assist or velocity correction.
+    /// Rider pitch torque applied to the chassis body. Lean back creates a
+    /// wheelie/climb posture; lean forward drives into drops and downhills.
     private func applyRiderLean() {
         guard leanInput != 0 else { return }
         let torqueMagnitude = isGrounded
@@ -476,6 +473,11 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             if speed > maxAllowedSpeed {
                 let scale = maxAllowedSpeed / speed
                 body.velocity = CGVector(dx: body.velocity.dx * scale, dy: body.velocity.dy * scale)
+            }
+            // Strict sanity ceiling on upward vertical velocity to guarantee no spring recoil
+            // or joint glitch can catapult the rider into space.
+            if body.velocity.dy > 600.0 {
+                body.velocity.dy = 600.0
             }
         }
         for body in [bike.chassisBody, bike.swingarmBody, bike.frontForkBody] {

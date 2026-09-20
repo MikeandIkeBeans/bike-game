@@ -546,6 +546,7 @@ final class TerrainStreamController {
                     startSlope: 0.46,
                     endSlope: -0.55,
                     isLinear: false,
+                    isSurface: false,
                     maximumUphillSlope: 1.2
                 )
             ]

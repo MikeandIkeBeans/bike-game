@@ -359,6 +359,9 @@ final class BikeNode: SKNode {
                 let scale = GameTuning.Bike.maximumSpeed / speed
                 body.velocity = CGVector(dx: body.velocity.dx * scale, dy: body.velocity.dy * scale)
             }
+            if body.velocity.dy > 600.0 {
+                body.velocity.dy = 600.0
+            }
         }
     }
 
