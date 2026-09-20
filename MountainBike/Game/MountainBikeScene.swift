@@ -401,25 +401,41 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         let normalVelocity = bike.velocity.dx * normal.dx + bike.velocity.dy * normal.dy
         guard normalVelocity < -8 else { return }
 
-        // In a concave compression (trough / scoop), normal velocity is absorbed by Box2D contact.
-        // Assist tangential momentum smoothly through physical forces rather than direct velocity assignment,
-        // preventing suspension spring over-extension and catapult launches into space.
+        // In a concave compression (trough / scoop), normal velocity is absorbed inelastically
+        // by Box2D contacts, and Coulomb friction destroys forward momentum.
+        // Redirect velocity vector along the terrain tangent to conserve scalar kinetic energy,
+        // applied UNIFIED across all bodies with wheel roll synchronization to prevent spring tension deltas.
         let targetSpeed = max(alongTrail, currentSpeed)
-        let speedDeficit = targetSpeed - alongTrail
-        if speedDeficit > 2 {
-            let totalMass: CGFloat = GameTuning.Bike.chassisMass
-                + GameTuning.Bike.swingarmMass
-                + GameTuning.Bike.rearWheelMass
-                + GameTuning.Bike.frontForkMass
-                + GameTuning.Bike.frontWheelMass
-            let assistAccel = speedDeficit * 12.0
-            let assistForce = min(assistAccel * totalMass, 1200.0)
-            bike.chassisBody.applyForce(CGVector(
-                dx: tangent.dx * assistForce,
-                dy: tangent.dy * assistForce
-            ))
-            bike.rearWheelBody.applyTorque(-assistForce * 0.35)
+        guard targetSpeed > 40 else { return }
+
+        let climbDy = min(tangent.dy, 0.50)
+        let climbDx = sqrt(max(0.01, 1.0 - climbDy * climbDy))
+        let targetVx = climbDx * targetSpeed
+        let targetVy = climbDy * targetSpeed
+
+        let blend: CGFloat = min(CGFloat(frameDelta) * 30.0, 0.75)
+        var newVx = bike.velocity.dx * (1 - blend) + targetVx * blend
+        var newVy = bike.velocity.dy * (1 - blend) + targetVy * blend
+
+        let newSpeed = hypot(newVx, newVy)
+        if newSpeed > targetSpeed && newSpeed > 0 {
+            let scale = targetSpeed / newSpeed
+            newVx *= scale
+            newVy *= scale
         }
+
+        // Hard clamp upward vertical velocity so a scoop can never launch the bike into orbit
+        newVy = min(newVy, 450.0)
+
+        let unifiedVelocity = CGVector(dx: newVx, dy: newVy)
+        for body in bike.allBodies {
+            body.velocity = unifiedVelocity
+        }
+
+        // Keep wheels rolling synchronously with trail speed to eliminate ground skid friction
+        let rollAngularVelocity = -targetSpeed / GameTuning.Bike.collisionWheelRadius
+        bike.rearWheelBody.angularVelocity = rollAngularVelocity
+        bike.frontWheelBody.angularVelocity = rollAngularVelocity
     }
 
     private func updatePedalRoost() {
