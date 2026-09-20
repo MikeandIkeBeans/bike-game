@@ -335,7 +335,10 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             1
         )
         let climbLoad = max(tangent.dy, 0)
-        let riderForce = (GameTuning.Handling.pedalForce + GameTuning.Handling.pedalClimbForce * climbLoad) * forceFade
+        let basePedal = (terrainStream.mapMode == .megaJump)
+            ? GameTuning.Handling.pedalForce * 2.2
+            : GameTuning.Handling.pedalForce
+        let riderForce = (basePedal + GameTuning.Handling.pedalClimbForce * climbLoad) * forceFade
         guard riderForce > 0 else { return }
 
         // Apply strong forward propulsion force to chassis and drive torque to rear wheel
@@ -387,7 +390,8 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         // to overcome Box2D discrete edge-chain friction:
         if tangent.dy < -0.05 {
             let downhillSlopeAccel = (-GameTuning.Simulation.gravity.dy) * (-tangent.dy)
-            let assistForce = downhillSlopeAccel * bike.chassisBody.mass * 1.5
+            let assistMultiplier: CGFloat = (terrainStream.mapMode == .megaJump) ? 3.5 : 1.5
+            let assistForce = downhillSlopeAccel * bike.chassisBody.mass * assistMultiplier
             bike.chassisBody.applyForce(CGVector(
                 dx: tangent.dx * assistForce,
                 dy: tangent.dy * assistForce
@@ -408,7 +412,8 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         let targetSpeed = max(alongTrail, currentSpeed)
         guard targetSpeed > 40 else { return }
 
-        let climbDy = min(tangent.dy, 0.50)
+        let maxClimbDy: CGFloat = (terrainStream.mapMode == .megaJump) ? 0.72 : 0.50
+        let climbDy = min(tangent.dy, maxClimbDy)
         let climbDx = sqrt(max(0.01, 1.0 - climbDy * climbDy))
         let targetVx = climbDx * targetSpeed
         let targetVy = climbDy * targetSpeed
@@ -425,7 +430,8 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         }
 
         // Hard clamp upward vertical velocity so a scoop can never launch the bike into orbit
-        newVy = min(newVy, 450.0)
+        let maxVerticalVy: CGFloat = (terrainStream.mapMode == .megaJump) ? 1_200.0 : 450.0
+        newVy = min(newVy, maxVerticalVy)
 
         let unifiedVelocity = CGVector(dx: newVx, dy: newVy)
         for body in bike.allBodies {
@@ -484,16 +490,15 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
 
     private func capVehicleMotion() {
         let maxAllowedSpeed = GameTuning.Bike.maximumSpeed
+        let maxVerticalSpeed: CGFloat = (terrainStream.mapMode == .megaJump) ? 1_400.0 : 600.0
         for body in bike.allBodies {
             let speed = vectorLength(body.velocity)
             if speed > maxAllowedSpeed {
                 let scale = maxAllowedSpeed / speed
                 body.velocity = CGVector(dx: body.velocity.dx * scale, dy: body.velocity.dy * scale)
             }
-            // Strict sanity ceiling on upward vertical velocity to guarantee no spring recoil
-            // or joint glitch can catapult the rider into space.
-            if body.velocity.dy > 600.0 {
-                body.velocity.dy = 600.0
+            if body.velocity.dy > maxVerticalSpeed {
+                body.velocity.dy = maxVerticalSpeed
             }
         }
         for body in [bike.chassisBody, bike.swingarmBody, bike.frontForkBody] {
@@ -516,17 +521,14 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         } else if !wasGrounded {
             if airborneTime >= 0.25 {
                 lightHaptic.impactOccurred()
-                lightHaptic.prepare()
-                let rearContact = CGPoint(x: bike.rearAxlePosition.x, y: bike.rearAxlePosition.y - GameTuning.Bike.collisionWheelRadius)
-                let frontContact = CGPoint(x: bike.frontAxlePosition.x, y: bike.frontAxlePosition.y - GameTuning.Bike.collisionWheelRadius)
-                emitLandingDust(at: rearContact)
-                emitLandingDust(at: frontContact)
-                let airDistance = max(0, Int((bike.chassisPosition.x - airborneStartX) / GameTuning.Display.worldUnitsPerMeter))
-                if airborneTime >= 0.75 || airDistance >= 20 {
+                let airDistance = max(0, Int((bike.chassisPosition.x - airborneStartX) / GameTuning.Simulation.worldUnitsPerPhysicsMeter))
+                if airDistance >= 10 {
                     let airToast: String
-                    if airDistance >= 60 {
+                    if airDistance >= 150 {
                         airToast = "MEGA AIR \(airDistance)m"
-                    } else if airDistance >= 30 {
+                    } else if airDistance >= 50 {
+                        airToast = "MONSTER AIR \(airDistance)m"
+                    } else if airDistance >= 25 {
                         airToast = "HUGE AIR \(airDistance)m"
                     } else {
                         airToast = "BIG AIR \(airDistance)m"
