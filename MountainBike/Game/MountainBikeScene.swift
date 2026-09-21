@@ -290,6 +290,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         applyPedalDrive()
         applyBraking()
         preserveTransitionMomentum()
+        dampGroundRebound()
         updatePedalRoost()
         updateSpeedEffects()
         applyRiderLean()
@@ -487,6 +488,22 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         let rollAngularVelocity = -targetSpeed / GameTuning.Bike.collisionWheelRadius
         bike.rearWheelBody.angularVelocity = rollAngularVelocity
         bike.frontWheelBody.angularVelocity = rollAngularVelocity
+    }
+
+    /// Absorbs impact rebound when the bike is on the ground.
+    /// Real mountain bike suspension features high rebound damping to pack into the trail
+    /// rather than pogo-sticking back into the air after landing or rolling through rough terrain.
+    private func dampGroundRebound() {
+        guard isGrounded, !isEarnedJumpFlight else { return }
+        let supportAngle = terrainStream.supportAngle(at: bike.chassisPosition.x)
+        let normalOut = CGVector(dx: -sin(supportAngle), dy: cos(supportAngle))
+        let outwardVel = bike.velocity.dx * normalOut.dx + bike.velocity.dy * normalOut.dy
+        if outwardVel > 5.0 {
+            for body in bike.allBodies {
+                body.velocity.dx -= normalOut.dx * outwardVel * 0.70
+                body.velocity.dy -= normalOut.dy * outwardVel * 0.70
+            }
+        }
     }
 
     private func updatePedalRoost() {
@@ -836,14 +853,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
 
         terrainStream.mapMode = mapMode
         bestDistance = UserDefaults.standard.integer(forKey: bestDistanceKey)
-        if mapMode == .megaJump {
-            physicsWorld.gravity = CGVector(
-                dx: 0,
-                dy: -1800.0 / GameTuning.Simulation.spriteKitPointsPerMeter
-            )
-        } else {
-            physicsWorld.gravity = GameTuning.Simulation.gravity
-        }
+        physicsWorld.gravity = GameTuning.Simulation.gravity
         terrainStream.reset()
         bike.resetAppearance()
         bike.prepareForSpawn()

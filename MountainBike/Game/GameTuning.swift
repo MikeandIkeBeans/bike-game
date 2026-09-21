@@ -102,7 +102,7 @@ enum GameTuning {
         static let earthGravityMetersPerSecondSquared: CGFloat = 9.81
         /// Authoritative gravitational acceleration in points/s^2 used by the physics model and tests.
         /// Tuned for fast, punchy, weighted action without slow-motion floating in mid-air.
-        static let gravityAcceleration: CGFloat = 1471.5
+        static let gravityAcceleration: CGFloat = 2400.0
         /// SpriteKit internally scales `physicsWorld.gravity` by 150.0 points/meter.
         static let spriteKitPointsPerMeter: CGFloat = 150.0
         static let gravity = CGVector(
@@ -151,21 +151,21 @@ enum GameTuning {
         static let upperTravelAngle: CGFloat = 0.26
         static let pivotFrictionTorque: CGFloat = 1.50
         static let springFrequency: CGFloat = 30.0
-        static let springDamping: CGFloat = 0.90
+        static let springDamping: CGFloat = 3.50
         static let topOutStrapExtraLength: CGFloat = 0.2
         /// Live telescoping front fork suspension masses, damping, and travel limits.
         static let frontForkMass: CGFloat = 0.50
         static let frontForkAngularDamping: CGFloat = 1.20
         static let frontForkAxis = CGVector(dx: -0.414, dy: 0.910)
         static let frontSpringFrequency: CGFloat = 30.0
-        static let frontSpringDamping: CGFloat = 0.90
+        static let frontSpringDamping: CGFloat = 3.50
         static let frontLowerTravelLimit: CGFloat = -14.0
         static let frontUpperTravelLimit: CGFloat = 0.0
         /// Low chassis and swingarm friction prevents abrasive drag when compressing in scoops.
         /// High tire friction provides traction for wheel drive and climbing.
         static let chassisFriction: CGFloat = 0.02
         static let tireFriction: CGFloat = 0.90
-        static let restitution: CGFloat = 0.08
+        static let restitution: CGFloat = 0.00
         static let maximumSpeed: CGFloat = 2_400
         static let maximumChassisAngularVelocity: CGFloat = 3.2
         static let groundedTolerance: CGFloat = 8
@@ -195,7 +195,7 @@ enum GameTuning {
         /// changes that bleed a downhill run's stored velocity.
         static let maximumColliderSegmentLength: CGFloat = 5
         static let friction: CGFloat = 1.10
-        static let restitution: CGFloat = 0.08
+        static let restitution: CGFloat = 0.00
         /// SpriteKit's edge rails can rarely leave a tire just across the
         /// wrong side of a landing. Only this shallow overlap is nudged back;
         /// a deep miss must never become a free ride to the top of a jump.
