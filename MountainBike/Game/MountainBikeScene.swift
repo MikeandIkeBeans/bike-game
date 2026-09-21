@@ -151,10 +151,6 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     private var keyboardPedalHeld = false
     private var keyboardBrakeHeld = false
     private var wasGrounded = true
-    private var isEarnedJumpFlight = false
-    private var recentMaxGroundedSlope: CGFloat = 0
-    private var recentGroundedSlopeTimer: TimeInterval = 0
-    private var lastGroundedSpeed: CGFloat = 0
     private var airborneTime: TimeInterval = 0
     private var airborneStartX: CGFloat = 0
     private var spawnPitchLockRemaining: TimeInterval = 0
@@ -287,7 +283,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
 
         updateSpawnPitchLock()
         terrainStream.ensureTerrainAhead(of: bike.chassisPosition.x)
-        applyDownhillAdhesion()
+        updateAutoTestInputs()
         applyPedalDrive()
         applyBraking()
         preserveTransitionMomentum()
@@ -371,16 +367,14 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         }
 
         let forwardSpeed = max(0, bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy)
-        let fadeSpeed = (terrainStream.mapMode == .megaJump) ? 4_500.0 : 450.0
+        let fadeSpeed = GameTuning.Handling.pedalFadeSpeed
         let forceFade = clamp(
             1 - forwardSpeed / fadeSpeed,
             0,
             1
         )
         let climbLoad = max(tangent.dy, 0)
-        let basePedal = (terrainStream.mapMode == .megaJump)
-            ? GameTuning.Handling.pedalForce * 4.0
-            : GameTuning.Handling.pedalForce
+        let basePedal = GameTuning.Handling.pedalForce
         let riderForce = (basePedal + GameTuning.Handling.pedalClimbForce * climbLoad) * forceFade
         guard riderForce > 0 else { return }
 
@@ -429,21 +423,6 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         let currentSpeed = hypot(bike.velocity.dx, bike.velocity.dy)
         guard currentSpeed > 40 else { return }
 
-        // On downhills (tangent.dy < -0.05), apply downhill gravity assistance force
-        // distributed proportionally across all bodies to overcome Box2D edge-chain friction
-        // without inducing rotational pitch moments:
-        if tangent.dy < -0.05 {
-            let downhillSlopeAccel = GameTuning.Simulation.gravityAcceleration * (-tangent.dy)
-            let assistMultiplier: CGFloat = (terrainStream.mapMode == .megaJump) ? 1.4 : 0.15
-            let accel = downhillSlopeAccel * assistMultiplier
-            for body in bike.allBodies {
-                body.applyForce(CGVector(
-                    dx: tangent.dx * body.mass * accel,
-                    dy: tangent.dy * body.mass * accel
-                ))
-            }
-        }
-
         let alongTrail = bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy
 
         // Check if bike is compressing into a concave curve (normal velocity towards ground)
@@ -458,13 +437,13 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         let targetSpeed = max(alongTrail, currentSpeed)
         guard targetSpeed > 40 else { return }
 
-        let maxClimbDy: CGFloat = (terrainStream.mapMode == .megaJump) ? 0.60 : 0.50
+        let maxClimbDy: CGFloat = 0.55
         let climbDy = min(tangent.dy, maxClimbDy)
         let climbDx = sqrt(max(0.01, 1.0 - climbDy * climbDy))
         let targetVx = climbDx * targetSpeed
         let targetVy = climbDy * targetSpeed
 
-        let blend: CGFloat = min(CGFloat(frameDelta) * 30.0, 0.75)
+        let blend: CGFloat = min(CGFloat(frameDelta) * 20.0, 0.60)
         var newVx = bike.velocity.dx * (1 - blend) + targetVx * blend
         var newVy = bike.velocity.dy * (1 - blend) + targetVy * blend
 
@@ -475,10 +454,6 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             newVy *= scale
         }
 
-        // Clamp upward vertical velocity so a scoop can never launch the bike into orbit
-        let maxVerticalVy: CGFloat = (terrainStream.mapMode == .megaJump) ? 1_400.0 : 420.0
-        newVy = min(newVy, maxVerticalVy)
-
         let unifiedVelocity = CGVector(dx: newVx, dy: newVy)
         for body in bike.allBodies {
             body.velocity = unifiedVelocity
@@ -487,6 +462,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         // Keep wheels rolling synchronously with trail speed to eliminate ground skid friction
         let rollAngularVelocity = -targetSpeed / GameTuning.Bike.collisionWheelRadius
         bike.rearWheelBody.angularVelocity = rollAngularVelocity
+        bike.frontWheelBody.angularVelocity = rollAngularVelocity
     }
 
     private func updatePedalRoost() {
@@ -523,64 +499,6 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
     }
 
     /// Keeps the bike planted on the track over rollers, crests, and chutes to prevent unearned moon-gravity
-    /// floating. Turns off completely when ballistic flight is earned (kicker ramps, cliff drops, manual hops).
-    private func applyDownhillAdhesion() {
-        // If airborne on an earned jump, do NOT apply adhesion or velocity cancellation!
-        guard !isEarnedJumpFlight else { return }
-
-        let chassisX = bike.chassisPosition.x
-        let chassisY = bike.chassisPosition.y
-        guard chassisX.isFinite, chassisY.isFinite else { return }
-
-        let isMegaJump = terrainStream.mapMode == .megaJump
-        if isMegaJump {
-            let cycle = max(0, Int((chassisX + 480.0) / 18100.0))
-            let ox = CGFloat(cycle) * 18100.0
-            let relX = chassisX - ox
-            // Adhesion only active on the roll-in and chute before kicker lip (relX < 4600)
-            // or on the landing runway (relX >= 6200). In the kicker and gap (4600 <= relX < 6200), flight is purely ballistic!
-            guard relX < 4600.0 || relX >= 6200.0 else { return }
-        }
-
-        guard let surfaceY = terrainStream.surfaceTerrainHeight(at: chassisX) else { return }
-        let nominalRideHeight: CGFloat = 55.0
-        let bikeAirClearance = (chassisY - surfaceY) - nominalRideHeight
-        // Only apply retention within close proximity to trail (clearance between -30 and +50 points)
-        guard bikeAirClearance >= -30 && bikeAirClearance <= 50 else { return }
-
-        let supportAngle = terrainStream.supportAngle(at: chassisX)
-        let slope = terrainStream.surfaceTerrainSlope(at: chassisX) ?? 0
-
-        // In Trail Rush, do NOT apply downforce when riding up an upward kicker face (slope >= 0.12)
-        if !isMegaJump && slope >= 0.12 {
-            return
-        }
-
-        let intoGround = CGVector(dx: sin(supportAngle), dy: -cos(supportAngle))
-        let baseAdhesionAccel: CGFloat = isMegaJump ? 1800.0 : 800.0
-        let adhesionMultiplier: CGFloat = isGrounded ? 1.0 : 1.4
-        let downforceAccel = baseAdhesionAccel * adhesionMultiplier
-
-        for body in bike.allBodies {
-            body.applyForce(CGVector(
-                dx: intoGround.dx * body.mass * downforceAccel,
-                dy: intoGround.dy * body.mass * downforceAccel
-            ))
-        }
-
-        // Suppress unearned upward liftoff over convex crests and rollers:
-        if !isGrounded && bikeAirClearance > 8 {
-            let normalOut = CGVector(dx: -sin(supportAngle), dy: cos(supportAngle))
-            let outwardVelocity = bike.velocity.dx * normalOut.dx + bike.velocity.dy * normalOut.dy
-            if outwardVelocity > 0 {
-                for body in bike.allBodies {
-                    body.velocity.dx -= normalOut.dx * outwardVelocity * 0.70
-                    body.velocity.dy -= normalOut.dy * outwardVelocity * 0.70
-                }
-            }
-        }
-    }
-
     /// Rider pitch torque applied to the chassis body. Lean back creates a
     /// wheelie/climb posture; lean forward drives into drops and downhills.
     private func applyRiderLean() {
@@ -598,33 +516,27 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             let relativePitch = normalizedAngle(bike.chassisRotation - supportAngle)
             let levelingTorque = clamp(-relativePitch * 140.0, -80.0, 80.0)
             bike.chassisBody.applyTorque(levelingTorque)
-        } else if isEarnedJumpFlight {
-            // When airborne on an earned jump with neutral rider lean:
-            // Gently align toward flight trajectory angle so the bike transitions smoothly into landing,
-            // with strong angular damping to prevent uncontrolled tumbling.
+        } else {
+            // When airborne with neutral rider lean:
+            // Subtle aero stability gently aids flight trajectory alignment without overriding rider freedom,
+            // while angular damping prevents uncontrolled tumbling.
             let vx = bike.velocity.dx
             let vy = bike.velocity.dy
+            let damping = bike.chassisBody.angularVelocity * 12.0
             if vx > 80 {
                 let flightAngle = atan2(vy, vx)
                 let angleDiff = normalizedAngle(flightAngle - bike.chassisRotation)
-                let damping = bike.chassisBody.angularVelocity * 12.0
-                let stiffness: CGFloat = (terrainStream.mapMode == .megaJump) ? 80.0 : 45.0
-                let maxTorque: CGFloat = (terrainStream.mapMode == .megaJump) ? 40.0 : 25.0
-                let aeroTorque = clamp(angleDiff * stiffness - damping, -maxTorque, maxTorque)
+                let aeroTorque = clamp(angleDiff * 16.0 - damping, -12.0, 12.0)
                 bike.chassisBody.applyTorque(aeroTorque)
+            } else {
+                bike.chassisBody.applyTorque(-damping)
             }
-        } else {
-            // Over unearned crest separations, keep attitude aligned with terrain slope:
-            let supportAngle = terrainStream.supportAngle(at: bike.chassisPosition.x)
-            let relativePitch = normalizedAngle(bike.chassisRotation - supportAngle)
-            let levelingTorque = clamp(-relativePitch * 100.0, -60.0, 60.0)
-            bike.chassisBody.applyTorque(levelingTorque)
         }
     }
 
     private func capVehicleMotion() {
-        let maxForwardSpeed: CGFloat = (terrainStream.mapMode == .megaJump) ? 2_600.0 : 850.0
-        let maxVerticalSpeed: CGFloat = (terrainStream.mapMode == .megaJump) ? 1_800.0 : 650.0
+        let maxForwardSpeed: CGFloat = GameTuning.Bike.maximumSpeed
+        let maxVerticalSpeed: CGFloat = 1_800.0
         for body in bike.allBodies {
             if body.velocity.dx > maxForwardSpeed {
                 body.velocity.dx = maxForwardSpeed
@@ -652,74 +564,51 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             if wasGrounded {
                 airborneStartX = bike.chassisPosition.x
                 airborneTime = 0
-
-                // Liftoff transition: determine if this departure earned ballistic jump flight
-                let isMegaJump = terrainStream.mapMode == .megaJump
-                let chassisX = bike.chassisPosition.x
-                let vy = bike.velocity.dy
-
-                var earnedJump = false
-                if isMegaJump {
-                    let cycle = max(0, Int((chassisX + 480.0) / 18100.0))
-                    let ox = CGFloat(cycle) * 18100.0
-                    let relX = chassisX - ox
-                    earnedJump = (relX >= 4600.0 && relX < 6200.0) && lastGroundedSpeed >= 700.0
-                } else {
-                    // Trail Rush earned jump criteria:
-                    // 1. Kicker launch: bike approached up an upward kicker face (recentMaxGroundedSlope >= 0.16)
-                    //    with forward speed >= 180 pt/s and positive upward pop (vy > 20 pt/s)
-                    let isKickerLaunch = recentMaxGroundedSlope >= 0.16 && lastGroundedSpeed >= 180.0 && vy > 20.0
-
-                    // 2. Cliff drop / step-down: surface drops away beneath bike (slope < -0.70 or no ground)
-                    let isCliffDrop = (terrainStream.surfaceTerrainSlope(at: chassisX) ?? -1.0) < -0.70
-                        || terrainStream.surfaceTerrainHeight(at: chassisX) == nil
-
-                    // 3. Manual hop / bunnyhop: rider pulled back (leanInput > 0) with speed and pop
-                    let isManualHop = leanInput > 0 && lastGroundedSpeed >= 160.0 && vy > 25.0
-
-                    earnedJump = isKickerLaunch || isCliffDrop || isManualHop
-                }
-
-                isEarnedJumpFlight = earnedJump
             }
             airborneTime += frameDelta
-        } else {
-            isEarnedJumpFlight = false
-            let currentSlope = terrainStream.surfaceTerrainSlope(at: bike.chassisPosition.x) ?? 0
-            lastGroundedSpeed = hypot(bike.velocity.dx, bike.velocity.dy)
-
-            recentGroundedSlopeTimer += frameDelta
-            if currentSlope > recentMaxGroundedSlope {
-                recentMaxGroundedSlope = currentSlope
-                recentGroundedSlopeTimer = 0
-            } else if recentGroundedSlopeTimer > 0.30 {
-                recentMaxGroundedSlope = max(0, currentSlope)
-                recentGroundedSlopeTimer = 0
-            }
-
-            if !wasGrounded {
-                if airborneTime >= 0.25 {
-                    lightHaptic.impactOccurred()
-                    let airDistance = max(0, Int((bike.chassisPosition.x - airborneStartX) / GameTuning.Simulation.worldUnitsPerPhysicsMeter))
-                    if airDistance >= 10 {
-                        let airToast: String
-                        if airDistance >= 150 {
-                            airToast = "MEGA AIR \(airDistance)m"
-                        } else if airDistance >= 50 {
-                            airToast = "MONSTER AIR \(airDistance)m"
-                        } else if airDistance >= 25 {
-                            airToast = "HUGE AIR \(airDistance)m"
-                        } else {
-                            airToast = "BIG AIR \(airDistance)m"
-                        }
-                        toast(airToast)
+        } else if !wasGrounded {
+            if airborneTime >= 0.25 {
+                lightHaptic.impactOccurred()
+                let airDistance = max(0, Int((bike.chassisPosition.x - airborneStartX) / GameTuning.Simulation.worldUnitsPerPhysicsMeter))
+                if airDistance >= 10 {
+                    let airToast: String
+                    if airDistance >= 150 {
+                        airToast = "MEGA AIR \(airDistance)m"
+                    } else if airDistance >= 50 {
+                        airToast = "MONSTER AIR \(airDistance)m"
+                    } else if airDistance >= 25 {
+                        airToast = "HUGE AIR \(airDistance)m"
+                    } else {
+                        airToast = "BIG AIR \(airDistance)m"
                     }
+                    toast(airToast)
                 }
-                airborneTime = 0
-                airborneStartX = 0
             }
+            airborneTime = 0
+            airborneStartX = 0
         }
         wasGrounded = currentlyGrounded
+    }
+
+    private func updateAutoTestInputs() {
+        guard isAutoTest, runState == .riding else { return }
+        let currentPitch = bike.chassisRotation
+        let targetPitch: CGFloat
+        if isGrounded {
+            targetPitch = terrainStream.supportAngle(at: bike.chassisPosition.x)
+        } else {
+            let vx = bike.velocity.dx
+            let vy = bike.velocity.dy
+            targetPitch = vx > 50 ? atan2(vy, vx) : 0
+        }
+        let pitchError = normalizedAngle(currentPitch - targetPitch)
+        if pitchError < -0.15 {
+            leanInput = 1.0 // lean back to prevent nose-dive
+        } else if pitchError > 0.20 {
+            leanInput = -1.0 // lean forward to prevent loop-out
+        } else {
+            leanInput = 0.0
+        }
     }
 
     private func updateAutoTest() {
@@ -842,10 +731,6 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         keyboardBrakeHeld = false
         elapsedRunTime = 0
         wasGrounded = true
-        isEarnedJumpFlight = false
-        recentMaxGroundedSlope = 0
-        recentGroundedSlopeTimer = 0
-        lastGroundedSpeed = 0
         airborneTime = 0
         airborneStartX = 0
         roostTimer = 0
@@ -1454,7 +1339,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         }
 
         // Dynamic high-speed air camera framing:
-        let targetScale: CGFloat = (!isGrounded && terrainStream.mapMode == .megaJump && bike.velocity.dx > 1000) ? 1.15 : 1.0
+        let targetScale: CGFloat = (!isGrounded && bike.velocity.dx > 1000) ? 1.15 : 1.0
         let scaleAmount = min(CGFloat(frameDelta) * 3.0, 1.0)
         cameraNode.xScale += (targetScale - cameraNode.xScale) * scaleAmount
         cameraNode.yScale = cameraNode.xScale

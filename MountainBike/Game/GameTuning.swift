@@ -576,9 +576,9 @@ enum GameTuning {
         /// Rider inputs add force or an equal-and-opposite torque couple to
         /// the vehicle; they never write velocity, change gravity, or lift
         /// the bike.
-        static let pedalForce: CGFloat = 1_400
-        static let pedalFadeSpeed: CGFloat = 1_800
-        static let pedalClimbForce: CGFloat = 2_800
+        static let pedalForce: CGFloat = 1_200
+        static let pedalFadeSpeed: CGFloat = 1_200
+        static let pedalClimbForce: CGFloat = 2_400
         static let groundLeanTorque: CGFloat = 90
         static let airLeanTorque: CGFloat = 65
     }

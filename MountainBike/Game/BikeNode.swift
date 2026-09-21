@@ -351,8 +351,12 @@ final class BikeNode: SKNode {
                 body.angularVelocity = 0
                 continue
             }
-            if abs(body.angularVelocity) > 35.0 {
-                body.angularVelocity = min(35.0, max(-35.0, body.angularVelocity))
+            let isWheel = (body === rearWheel.physicsBody || body === frontWheel.physicsBody)
+            let maxAngVel: CGFloat = isWheel
+                ? (GameTuning.Bike.maximumSpeed / GameTuning.Bike.collisionWheelRadius)
+                : 35.0
+            if abs(body.angularVelocity) > maxAngVel {
+                body.angularVelocity = min(maxAngVel, max(-maxAngVel, body.angularVelocity))
             }
             let speed = hypot(body.velocity.dx, body.velocity.dy)
             if speed > GameTuning.Bike.maximumSpeed {
