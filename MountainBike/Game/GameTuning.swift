@@ -102,7 +102,7 @@ enum GameTuning {
         static let earthGravityMetersPerSecondSquared: CGFloat = 9.81
         /// Authoritative gravitational acceleration in points/s^2 used by the physics model and tests.
         /// Tuned for fast, punchy, weighted action without slow-motion floating in mid-air.
-        static let gravityAcceleration: CGFloat = 520.0
+        static let gravityAcceleration: CGFloat = 1471.5
         /// SpriteKit internally scales `physicsWorld.gravity` by 150.0 points/meter.
         static let spriteKitPointsPerMeter: CGFloat = 150.0
         static let gravity = CGVector(
