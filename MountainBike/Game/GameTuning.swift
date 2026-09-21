@@ -102,7 +102,7 @@ enum GameTuning {
         static let earthGravityMetersPerSecondSquared: CGFloat = 9.81
         /// Authoritative gravitational acceleration in points/s^2 used by the physics model and tests.
         /// Tuned for fast, punchy, weighted action without slow-motion floating in mid-air.
-        static let gravityAcceleration: CGFloat = 2100.0
+        static let gravityAcceleration: CGFloat = 3600.0
         /// SpriteKit internally scales `physicsWorld.gravity` by 150.0 points/meter.
         static let spriteKitPointsPerMeter: CGFloat = 150.0
         static let gravity = CGVector(
@@ -126,7 +126,7 @@ enum GameTuning {
         /// Guards the spawn calculation if an authored rail ever approaches a
         /// vertical tangent. Normal course slopes stay well above this value.
         static let minimumSpawnCosine: CGFloat = 0.35
-        static let startVelocity = CGVector(dx: 120, dy: 0)
+        static let startVelocity = CGVector(dx: 260, dy: 0)
         static let frameGuardRadius: CGFloat = 0
         static let frameGuardOffsetY: CGFloat = 0
 
@@ -166,8 +166,8 @@ enum GameTuning {
         static let chassisFriction: CGFloat = 0.02
         static let tireFriction: CGFloat = 0.90
         static let restitution: CGFloat = 0.00
-        static let maximumSpeed: CGFloat = 1_200
-        static let maximumVerticalSpeed: CGFloat = 950
+        static let maximumSpeed: CGFloat = 2_200
+        static let maximumVerticalSpeed: CGFloat = 1_600
         static let maximumChassisAngularVelocity: CGFloat = 3.2
         static let groundedTolerance: CGFloat = 8
         /// A generous multiple of the bike's own resting size (wheels sit
@@ -577,9 +577,9 @@ enum GameTuning {
         /// Rider inputs add force or an equal-and-opposite torque couple to
         /// the vehicle; they never write velocity, change gravity, or lift
         /// the bike.
-        static let pedalForce: CGFloat = 1_300
-        static let pedalFadeSpeed: CGFloat = 750
-        static let pedalClimbForce: CGFloat = 2_400
+        static let pedalForce: CGFloat = 2_200
+        static let pedalFadeSpeed: CGFloat = 1_600
+        static let pedalClimbForce: CGFloat = 3_600
         static let groundLeanTorque: CGFloat = 90
         static let airLeanTorque: CGFloat = 65
     }

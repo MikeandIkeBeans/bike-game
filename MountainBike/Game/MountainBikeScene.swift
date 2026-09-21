@@ -382,14 +382,15 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         let climbLoad = max(tangent.dy, 0)
         let basePedal = GameTuning.Handling.pedalForce
         let riderForce = (basePedal + GameTuning.Handling.pedalClimbForce * climbLoad) * forceFade
-        guard riderForce > 0 else { return }
-
-        // Apply strong forward propulsion force to chassis and drive torque to rear wheel
-        let forceVector = CGVector(
-            dx: tangent.dx * riderForce,
-            dy: tangent.dy * riderForce
-        )
-        bike.chassisBody.applyForce(forceVector)
+        // Distribute drive force across vehicle bodies proportionally by mass
+        // so the compound multi-body bike accelerates synchronously with punchy power
+        let totalMass: CGFloat = 6.6
+        for body in bike.allBodies {
+            body.applyForce(CGVector(
+                dx: tangent.dx * (body.mass / totalMass) * riderForce,
+                dy: tangent.dy * (body.mass / totalMass) * riderForce
+            ))
+        }
         bike.rearWheelBody.applyTorque(-riderForce * 0.40)
     }
 
@@ -439,11 +440,11 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         let targetSpeed = max(alongTrail, currentSpeed)
         guard targetSpeed > 40 else { return }
 
-        let maxClimbDy: CGFloat = 0.50
+        let maxClimbDy: CGFloat = 0.55
         let climbDy = min(tangent.dy, maxClimbDy)
         let climbDx = sqrt(max(0.01, 1.0 - climbDy * climbDy))
         let targetVx = climbDx * targetSpeed
-        let targetVy = min(climbDy * targetSpeed, 600.0)
+        let targetVy = min(climbDy * targetSpeed, 1_200.0)
 
         let blend: CGFloat = min(CGFloat(frameDelta) * 16.0, 0.55)
         var newVx = bike.velocity.dx * (1 - blend) + targetVx * blend
@@ -763,7 +764,11 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             }
         }
 
-        if chassisY < terrainStream.terrainHeight(at: chassisX) - GameTuning.Crash.fallBelowTerrainDistance {
+        if let surfaceY = terrainStream.surfaceTerrainHeight(at: chassisX) {
+            if chassisY < surfaceY - GameTuning.Crash.fallBelowTerrainDistance {
+                requestCrash(.fell)
+            }
+        } else if chassisY < terrainStream.terrainHeight(at: chassisX) - 1_500.0 {
             requestCrash(.fell)
         }
     }
@@ -868,6 +873,15 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         guard runState == .intro else { return }
         spawnPitchLockRemaining = GameTuning.Bike.spawnPitchLockDuration
         bike.activatePhysics(lockPitch: spawnPitchLockRemaining > 0)
+        let spawnAttitude = terrainStream.supportAngle(at: GameTuning.Bike.spawnX)
+        let startSpeed = GameTuning.Bike.startVelocity.dx
+        let initVelocity = CGVector(
+            dx: cos(spawnAttitude) * startSpeed,
+            dy: sin(spawnAttitude) * startSpeed
+        )
+        for body in bike.allBodies {
+            body.velocity = initVelocity
+        }
         runState = .riding
         overlay.isHidden = true
         toast("DROP IN")
