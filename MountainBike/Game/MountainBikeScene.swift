@@ -809,7 +809,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         if mapMode == .megaJump {
             physicsWorld.gravity = CGVector(
                 dx: 0,
-                dy: -850.0 / GameTuning.Simulation.spriteKitPointsPerMeter
+                dy: -1800.0 / GameTuning.Simulation.spriteKitPointsPerMeter
             )
         } else {
             physicsWorld.gravity = GameTuning.Simulation.gravity
