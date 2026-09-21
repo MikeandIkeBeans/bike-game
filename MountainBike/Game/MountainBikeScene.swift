@@ -431,21 +431,21 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
 
         let alongTrail = bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy
 
-        // Only redirect when compressing into a concave trough/transition (normal velocity into ground < -15 pt/s)
+        // Only redirect when compressing into a concave trough/transition (normal velocity into ground < -12 pt/s)
         let normal = CGVector(dx: -tangent.dy, dy: tangent.dx)
         let normalVelocity = bike.velocity.dx * normal.dx + bike.velocity.dy * normal.dy
-        guard normalVelocity < -15 else { return }
+        guard normalVelocity < -12 else { return }
 
         let targetSpeed = max(alongTrail, currentSpeed)
         guard targetSpeed > 40 else { return }
 
-        let maxClimbDy: CGFloat = 0.45
+        let maxClimbDy: CGFloat = 0.50
         let climbDy = min(tangent.dy, maxClimbDy)
         let climbDx = sqrt(max(0.01, 1.0 - climbDy * climbDy))
         let targetVx = climbDx * targetSpeed
-        let targetVy = min(climbDy * targetSpeed, 350.0) // Bounded upward velocity so scoops do not catapult bike
+        let targetVy = min(climbDy * targetSpeed, 600.0)
 
-        let blend: CGFloat = min(CGFloat(frameDelta) * 16.0, 0.50)
+        let blend: CGFloat = min(CGFloat(frameDelta) * 16.0, 0.55)
         var newVx = bike.velocity.dx * (1 - blend) + targetVx * blend
         var newVy = bike.velocity.dy * (1 - blend) + targetVy * blend
 
@@ -512,27 +512,29 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
 
         let nominalRideHeight: CGFloat = 55.0
         let bikeAirClearance = (chassisY - surfaceY) - nominalRideHeight
-        guard bikeAirClearance >= -30 && bikeAirClearance <= 35 else { return }
 
-        let supportAngle = terrainStream.supportAngle(at: chassisX)
-        let intoGround = CGVector(dx: sin(supportAngle), dy: -cos(supportAngle))
-        let downforceAccel: CGFloat = isGrounded ? 800.0 : 1200.0
+        // When grounded, natural gravity (2400 pt/s²) firmly holds tires down without
+        // adding artificial normal force that causes Coulomb friction drag.
+        // Only apply adhesion when airborne over an unearned roller crest:
+        if !isGrounded && bikeAirClearance > 2.0 && bikeAirClearance < 45.0 {
+            let supportAngle = terrainStream.supportAngle(at: chassisX)
+            let intoGround = CGVector(dx: sin(supportAngle), dy: -cos(supportAngle))
+            let downforceAccel: CGFloat = 900.0
 
-        for body in bike.allBodies {
-            body.applyForce(CGVector(
-                dx: intoGround.dx * body.mass * downforceAccel,
-                dy: intoGround.dy * body.mass * downforceAccel
-            ))
-        }
+            for body in bike.allBodies {
+                body.applyForce(CGVector(
+                    dx: intoGround.dx * body.mass * downforceAccel,
+                    dy: intoGround.dy * body.mass * downforceAccel
+                ))
+            }
 
-        // Suppress unearned outward liftoff over convex crests and rollers:
-        if !isGrounded && bikeAirClearance > 5 {
+            // Suppress unearned outward liftoff over convex crests and rollers:
             let normalOut = CGVector(dx: -sin(supportAngle), dy: cos(supportAngle))
             let outwardVelocity = bike.velocity.dx * normalOut.dx + bike.velocity.dy * normalOut.dy
             if outwardVelocity > 0 {
                 for body in bike.allBodies {
-                    body.velocity.dx -= normalOut.dx * outwardVelocity * 0.75
-                    body.velocity.dy -= normalOut.dy * outwardVelocity * 0.75
+                    body.velocity.dx -= normalOut.dx * outwardVelocity * 0.50
+                    body.velocity.dy -= normalOut.dy * outwardVelocity * 0.50
                 }
             }
         }
@@ -590,18 +592,6 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         let maxForwardSpeed: CGFloat = GameTuning.Bike.maximumSpeed
         let maxVerticalSpeed: CGFloat = GameTuning.Bike.maximumVerticalSpeed
 
-        // Subtle natural quadratic aerodynamic drag prevents runaway downhill speed
-        let speed = hypot(bike.velocity.dx, bike.velocity.dy)
-        if speed > 180.0 {
-            let dragFactor = min(0.00045 * (speed - 180.0), 0.35)
-            let dragVx = bike.velocity.dx * dragFactor * CGFloat(frameDelta) * 60.0
-            let dragVy = bike.velocity.dy * dragFactor * CGFloat(frameDelta) * 60.0
-            for body in bike.allBodies {
-                body.velocity.dx -= dragVx
-                body.velocity.dy -= dragVy
-            }
-        }
-
         for body in bike.allBodies {
             if body.velocity.dx > maxForwardSpeed {
                 body.velocity.dx = maxForwardSpeed
@@ -636,18 +626,20 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
                 let vy = bike.velocity.dy
                 let speed = hypot(bike.velocity.dx, vy)
 
-                // 1. Kicker launch: bike approached up an upward kicker face (recentMaxGroundedSlope >= 0.14)
-                //    with forward speed >= 140 pt/s and positive upward pop (vy > 12 pt/s)
-                let isKickerLaunch = recentMaxGroundedSlope >= 0.14 && speed >= 140.0 && vy > 12.0
+                // 1. Kicker launch: bike approached up an upward kicker face (slope >= 0.10) with speed and upward pop
+                let isKickerLaunch = recentMaxGroundedSlope >= 0.10 && speed >= 120.0 && vy > 8.0
 
-                // 2. Cliff drop / step-down: surface drops away beneath bike (slope < -0.65 or gap)
-                let isCliffDrop = (terrainStream.surfaceTerrainSlope(at: chassisX) ?? -1.0) < -0.65
+                // 2. High-speed crest launch: carrying fast speed over an incline (speed >= 280 pt/s) with upward pop
+                let isHighSpeedLaunch = recentMaxGroundedSlope >= 0.04 && speed >= 280.0 && vy > 10.0
+
+                // 3. Cliff drop / step-down: surface drops away beneath bike (slope < -0.55 or gap)
+                let isCliffDrop = (terrainStream.surfaceTerrainSlope(at: chassisX) ?? -1.0) < -0.55
                     || terrainStream.surfaceTerrainHeight(at: chassisX) == nil
 
-                // 3. Manual hop / bunnyhop: rider pulled back (leanInput > 0) with speed and pop
-                let isManualHop = leanInput > 0 && speed >= 120.0 && vy > 12.0
+                // 4. Manual hop / bunnyhop: rider pulled back (leanInput > 0) with speed and pop
+                let isManualHop = leanInput > 0 && speed >= 100.0 && vy > 8.0
 
-                isEarnedJumpFlight = isKickerLaunch || isCliffDrop || isManualHop
+                isEarnedJumpFlight = isKickerLaunch || isHighSpeedLaunch || isCliffDrop || isManualHop
             }
             airborneTime += frameDelta
         } else {
