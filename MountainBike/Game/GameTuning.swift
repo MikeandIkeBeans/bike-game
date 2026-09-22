@@ -589,7 +589,7 @@ enum GameTuning {
         static let minimumTravelBeforeCrashChecks: CGFloat = 90
         static let maximumRelativeLeanAngle: CGFloat = .pi * 0.50
         static let minimumFrameStrikePitch: CGFloat = 1.20
-        static let fallBelowTerrainDistance: CGFloat = 360
+        static let fallBelowTerrainDistance: CGFloat = 50
     }
 
     enum Display {

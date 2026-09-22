@@ -314,23 +314,9 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
                 }
             )
 
-            // Catastrophic tunneling failsafe: if a severe frame hitch or solver glitch
-            // ever places the chassis >60 units beneath the physical terrain line while NOT grounded,
-            // rescue the entire bike assembly back onto the trail with unified momentum across all bodies.
             let chassisX = bike.chassisPosition.x
             let chassisY = bike.chassisPosition.y
             guard chassisX.isFinite, chassisY.isFinite else { return }
-            if let surfaceTerrainY = terrainStream.surfaceTerrainHeight(at: chassisX),
-               !isGrounded && chassisY < surfaceTerrainY - 60 {
-                let attitude = terrainStream.supportAngle(at: chassisX)
-                let safeY = surfaceTerrainY + bike.spawnClearance(for: attitude) + 2.0
-                let currentSpeed = min(max(bike.velocity.dx, 100), GameTuning.Bike.maximumSpeed)
-                bike.reset(at: CGPoint(x: chassisX, y: safeY), attitude: attitude)
-                bike.activatePhysics()
-                for body in bike.allBodies {
-                    body.velocity = CGVector(dx: currentSpeed, dy: 0)
-                }
-            }
 
             elapsedRunTime += frameDelta
             bike.updateVisuals(deltaTime: frameDelta, leanInput: leanInput, pedalHeld: pedalHeld)
@@ -514,13 +500,13 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
         let nominalRideHeight: CGFloat = 55.0
         let bikeAirClearance = (chassisY - surfaceY) - nominalRideHeight
 
-        // When grounded, natural gravity (2400 pt/s²) firmly holds tires down without
-        // adding artificial normal force that causes Coulomb friction drag.
-        // Only apply adhesion when airborne over an unearned roller crest:
-        if !isGrounded && bikeAirClearance > 2.0 && bikeAirClearance < 45.0 {
+        // When ungrounded over continuous terrain without an earned kicker launch,
+        // apply firm trail adhesion and suppress outward velocity so the bike follows
+        // the natural line of the earth down chutes and across rollers.
+        if !isGrounded && bikeAirClearance > 1.0 && bikeAirClearance < 160.0 {
             let supportAngle = terrainStream.supportAngle(at: chassisX)
             let intoGround = CGVector(dx: sin(supportAngle), dy: -cos(supportAngle))
-            let downforceAccel: CGFloat = 900.0
+            let downforceAccel: CGFloat = 1600.0
 
             for body in bike.allBodies {
                 body.applyForce(CGVector(
@@ -529,13 +515,14 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
                 ))
             }
 
-            // Suppress unearned outward liftoff over convex crests and rollers:
+            // Suppress unearned outward liftoff over convex crests, steep chutes, and rollers:
             let normalOut = CGVector(dx: -sin(supportAngle), dy: cos(supportAngle))
             let outwardVelocity = bike.velocity.dx * normalOut.dx + bike.velocity.dy * normalOut.dy
             if outwardVelocity > 0 {
+                let dampFactor: CGFloat = (bikeAirClearance < 30.0) ? 0.75 : 0.50
                 for body in bike.allBodies {
-                    body.velocity.dx -= normalOut.dx * outwardVelocity * 0.50
-                    body.velocity.dy -= normalOut.dy * outwardVelocity * 0.50
+                    body.velocity.dx -= normalOut.dx * outwardVelocity * dampFactor
+                    body.velocity.dy -= normalOut.dy * outwardVelocity * dampFactor
                 }
             }
         }
@@ -622,25 +609,23 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
                 airborneTime = 0
                 landingDampRemaining = 0
 
-                // Liftoff: determine if this departure earned ballistic jump flight
+                // Liftoff: determine if this departure earned ballistic jump flight.
+                // Rolling along continuous terrain—even down steep chutes or rollers—must track
+                // the contour of the earth unless launching off an upward kicker ramp, air gap, or manual hop.
                 let chassisX = bike.chassisPosition.x
                 let vy = bike.velocity.dy
                 let speed = hypot(bike.velocity.dx, vy)
 
-                // 1. Kicker launch: bike approached up an upward kicker face (slope >= 0.10) with speed and upward pop
-                let isKickerLaunch = recentMaxGroundedSlope >= 0.10 && speed >= 120.0 && vy > 8.0
+                // 1. Kicker launch: bike launched off an upward kicker face (slope >= 0.12) with speed and upward pop
+                let isKickerLaunch = recentMaxGroundedSlope >= 0.12 && speed >= 120.0 && vy > 12.0
 
-                // 2. High-speed crest launch: carrying fast speed over an incline (speed >= 280 pt/s) with upward pop
-                let isHighSpeedLaunch = recentMaxGroundedSlope >= 0.04 && speed >= 280.0 && vy > 10.0
+                // 2. Air gap / void: surface terminates beneath bike (e.g. canyon gap)
+                let isAirGap = terrainStream.surfaceTerrainHeight(at: chassisX) == nil
 
-                // 3. Cliff drop / step-down: surface drops away beneath bike (slope < -0.55 or gap)
-                let isCliffDrop = (terrainStream.surfaceTerrainSlope(at: chassisX) ?? -1.0) < -0.55
-                    || terrainStream.surfaceTerrainHeight(at: chassisX) == nil
+                // 3. Manual hop / bunnyhop: rider pulled back (leanInput > 0) with speed and pop
+                let isManualHop = leanInput > 0 && speed >= 100.0 && vy > 15.0
 
-                // 4. Manual hop / bunnyhop: rider pulled back (leanInput > 0) with speed and pop
-                let isManualHop = leanInput > 0 && speed >= 100.0 && vy > 8.0
-
-                isEarnedJumpFlight = isKickerLaunch || isHighSpeedLaunch || isCliffDrop || isManualHop
+                isEarnedJumpFlight = isKickerLaunch || isAirGap || isManualHop
             }
             airborneTime += frameDelta
         } else {

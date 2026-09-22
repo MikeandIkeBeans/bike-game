@@ -573,6 +573,7 @@ struct MockPenetrationRecovery {
     var chassisY: CGFloat
     var chassisVy: CGFloat
     var rescued = false
+    var crashed = false
 
     let wheelRadius: CGFloat = 16.0
     let frameGuardRadius: CGFloat = 0.0
@@ -580,13 +581,9 @@ struct MockPenetrationRecovery {
     let trigger: CGFloat = 6.0
 
     mutating func recover(terrainY: CGFloat) {
-        // Catastrophic tunneling rescue (checked first if severe breach > 60 units below terrain)
-        if chassisY < terrainY - 60 {
-            rescued = true
-            chassisY = terrainY + 35
-            chassisVy = 0
-            rearWheelY = terrainY + wheelRadius + recoveryClearance
-            frontWheelY = terrainY + wheelRadius + recoveryClearance
+        // Severe subterranean drop (>50 units below terrain) is a cliff/void crash (never teleported)
+        if chassisY < terrainY - 50 {
+            crashed = true
             return
         }
 
@@ -610,7 +607,7 @@ struct MockPenetrationRecovery {
         }
 
         // Translate the ENTIRE assembly together as a single unit
-        if maxDeltaY > 0 && maxDeltaY <= 30 {
+        if maxDeltaY > 0 && maxDeltaY <= 45 {
             rearWheelY += maxDeltaY
             frontWheelY += maxDeltaY
             chassisY += maxDeltaY
@@ -653,12 +650,11 @@ pr4.recover(terrainY: 100)
 suite.assertEqual(pr4.chassisY, 101.0, "Chassis frame clamped to minChassisY + recoveryClearance (101.0)")
 suite.assertEqual(pr4.chassisVy, 0.0, "Chassis downward velocity zeroed")
 
-// 5. Catastrophic tunneling rescue (>60 units below terrain)
+// 5. Severe subterranean breach (>50 units below terrain) triggers cliff/void crash (NO teleportation)
 var pr5 = MockPenetrationRecovery(rearWheelY: 30, rearWheelVy: -1000, frontWheelY: 30, frontWheelVy: -1000, chassisY: 35, chassisVy: -1000)
 pr5.recover(terrainY: 100)
-suite.assert(pr5.rescued, "Catastrophic tunneling triggers emergency rescue")
-suite.assertEqual(pr5.chassisY, 135.0, "Catastrophic chassis rescued to safe height above ground")
-suite.assertEqual(pr5.chassisVy, 0.0, "Rescued vertical velocity zeroed")
+suite.assert(pr5.crashed, "Severe subterranean breach correctly triggers crash")
+suite.assertEqual(pr5.rescued, false, "Subterranean drop must NEVER teleport bike to surface")
 
 // Test 14: Newtonian Gravity & Ballistic Launch Invariants
 print("\n• Test Group 14: Newtonian Gravity & Ballistic Launch Invariants")

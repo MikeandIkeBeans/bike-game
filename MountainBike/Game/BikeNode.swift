@@ -293,10 +293,11 @@ final class BikeNode: SKNode {
         var maxDeltaY: CGFloat = 0
 
         // 1. Check rear wheel penetration
-        let rearSlope = terrainSlopeAt?(rearWheel.position.x) ?? 0
-        if rearSlope <= 0.05 {
-            let rearTerrainY = terrainHeightAt(rearWheel.position.x)
-            let idealRearY = rearTerrainY + wheelRadius
+        let rearTerrainY = terrainHeightAt(rearWheel.position.x)
+        if rearTerrainY > -50_000 {
+            let rearSlope = terrainSlopeAt?(rearWheel.position.x) ?? 0
+            let slopeClearance = wheelRadius * sqrt(1.0 + rearSlope * rearSlope)
+            let idealRearY = rearTerrainY + slopeClearance
             if rearWheel.position.y <= idealRearY - trigger {
                 let deltaY = (idealRearY + recoveryClearance) - rearWheel.position.y
                 if deltaY > maxDeltaY { maxDeltaY = deltaY }
@@ -304,10 +305,11 @@ final class BikeNode: SKNode {
         }
 
         // 2. Check front wheel penetration
-        let frontSlope = terrainSlopeAt?(frontWheel.position.x) ?? 0
-        if frontSlope <= 0.05 {
-            let frontTerrainY = terrainHeightAt(frontWheel.position.x)
-            let idealFrontY = frontTerrainY + wheelRadius
+        let frontTerrainY = terrainHeightAt(frontWheel.position.x)
+        if frontTerrainY > -50_000 {
+            let frontSlope = terrainSlopeAt?(frontWheel.position.x) ?? 0
+            let slopeClearance = wheelRadius * sqrt(1.0 + frontSlope * frontSlope)
+            let idealFrontY = frontTerrainY + slopeClearance
             if frontWheel.position.y <= idealFrontY - trigger {
                 let deltaY = (idealFrontY + recoveryClearance) - frontWheel.position.y
                 if deltaY > maxDeltaY { maxDeltaY = deltaY }
@@ -315,9 +317,8 @@ final class BikeNode: SKNode {
         }
 
         // 3. Check chassis bottom-out penetration
-        let chassisSlope = terrainSlopeAt?(chassis.position.x) ?? 0
-        if chassisSlope <= 0.05 {
-            let chassisTerrainY = terrainHeightAt(chassis.position.x)
+        let chassisTerrainY = terrainHeightAt(chassis.position.x)
+        if chassisTerrainY > -50_000 {
             let minChassisY = chassisTerrainY + GameTuning.Bike.frameGuardRadius
             if chassis.position.y <= minChassisY - trigger {
                 let deltaY = (minChassisY + recoveryClearance) - chassis.position.y
@@ -325,10 +326,13 @@ final class BikeNode: SKNode {
             }
         }
 
-        // Translate the ENTIRE bike assembly together as a single unit
-        if maxDeltaY > 0 && maxDeltaY <= 30 {
+        // Translate the ENTIRE bike assembly together as a single unit and cancel downward velocity
+        if maxDeltaY > 0 && maxDeltaY <= 45 {
             for node in [chassis, swingarm, frontFork, rearWheel, frontWheel] {
                 node.position.y += maxDeltaY
+                if let body = node.physicsBody, body.velocity.dy < 0 {
+                    body.velocity.dy = 0
+                }
             }
         }
     }
