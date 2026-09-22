@@ -102,7 +102,7 @@ enum GameTuning {
         static let earthGravityMetersPerSecondSquared: CGFloat = 9.81
         /// Authoritative gravitational acceleration in points/s^2 used by the physics model and tests.
         /// Tuned for fast, punchy, weighted action without slow-motion floating in mid-air.
-        static let gravityAcceleration: CGFloat = 3600.0
+        static let gravityAcceleration: CGFloat = 7200.0
         /// SpriteKit internally scales `physicsWorld.gravity` by 150.0 points/meter.
         static let spriteKitPointsPerMeter: CGFloat = 150.0
         static let gravity = CGVector(
@@ -579,7 +579,7 @@ enum GameTuning {
         /// the bike.
         static let pedalForce: CGFloat = 2_200
         static let pedalFadeSpeed: CGFloat = 1_600
-        static let pedalClimbForce: CGFloat = 3_600
+        static let pedalClimbForce: CGFloat = 0
         static let groundLeanTorque: CGFloat = 90
         static let airLeanTorque: CGFloat = 65
     }

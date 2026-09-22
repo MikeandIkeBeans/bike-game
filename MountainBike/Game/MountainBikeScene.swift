@@ -347,17 +347,6 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             return
         }
 
-        let alongTrail = bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy
-
-        // Anti-rollback ratcheting freewheel: if sliding backward on an uphill slope,
-        // cancel the backward slide so pedal drive immediately powers forward.
-        if alongTrail < 0 && tangent.dy > 0 {
-            for body in bike.allBodies {
-                body.velocity.dx -= tangent.dx * alongTrail
-                body.velocity.dy -= tangent.dy * alongTrail
-            }
-        }
-
         let forwardSpeed = max(0, bike.velocity.dx * tangent.dx + bike.velocity.dy * tangent.dy)
         let fadeSpeed = GameTuning.Handling.pedalFadeSpeed
         let forceFade = clamp(
@@ -365,9 +354,7 @@ final class MountainBikeScene: SKScene, SKPhysicsContactDelegate {
             0,
             1
         )
-        let climbLoad = max(tangent.dy, 0)
-        let basePedal = GameTuning.Handling.pedalForce
-        let riderForce = (basePedal + GameTuning.Handling.pedalClimbForce * climbLoad) * forceFade
+        let riderForce = GameTuning.Handling.pedalForce * forceFade
         // Distribute drive force across vehicle bodies proportionally by mass
         // so the compound multi-body bike accelerates synchronously with punchy power
         let totalMass: CGFloat = 6.6
