@@ -101,8 +101,22 @@ enum GameTuning {
         static let worldUnitsPerPhysicsMeter: CGFloat = 14.0
         static let earthGravityMetersPerSecondSquared: CGFloat = 9.81
         /// Authoritative gravitational acceleration in points/s^2 used by the physics model and tests.
-        /// Tuned for fast, punchy, weighted action without slow-motion floating in mid-air.
-        static let gravityAcceleration: CGFloat = 7200.0
+        /// One shared value for every map — physics itself shouldn't differ
+        /// by which level you're on. The consequence for carrying monster
+        /// air on TrailRush belongs in the landing/crash logic instead (see
+        /// GameTuning.Crash's landing-harshness constants and
+        /// MountainBikeScene's hard-landing check), not in making the world
+        /// itself behave differently depending on where you are.
+        ///
+        /// Raised from 2600: a wheel leaves any convex curve once
+        /// v²/R exceeds g·cos(θ) — speed-squared over the curve's radius
+        /// outrunning gravity's pull along the surface normal. That's true
+        /// physics, not a bug; the only real ways to keep more of the
+        /// game's actual curves and speeds inside that limit are a
+        /// stronger g (this) or more suspension travel for the wheel to
+        /// chase the drop with (see lowerTravelAngle/upperTravelAngle and
+        /// frontLowerTravelLimit below, widened alongside this).
+        static let gravityAcceleration: CGFloat = 3000.0
         /// SpriteKit internally scales `physicsWorld.gravity` by 150.0 points/meter.
         static let spriteKitPointsPerMeter: CGFloat = 150.0
         static let gravity = CGVector(
@@ -147,19 +161,33 @@ enum GameTuning {
         static let swingarmShockMountLocal = CGPoint(x: -12, y: -4)
         static let rearAxleLocal = CGPoint(x: -25, y: -14)
         /// Travel stops, joint friction, and spring rates for the rear shock.
-        static let lowerTravelAngle: CGFloat = -0.06
-        static let upperTravelAngle: CGFloat = 0.26
+        /// Widened from -0.06...0.26 (a ~18° total swing) to -0.24...0.42 (a
+        /// ~38° swing) — real physical room for the rear wheel to extend
+        /// further downward into a dropping surface before the linkage
+        /// itself runs out of travel and the wheel is forced to separate
+        /// regardless of how strong gravity is. Spring frequency raised
+        /// alongside it so the extra range doesn't feel wallowy or slow to
+        /// respond.
+        static let lowerTravelAngle: CGFloat = -0.24
+        static let upperTravelAngle: CGFloat = 0.42
         static let pivotFrictionTorque: CGFloat = 1.50
-        static let springFrequency: CGFloat = 30.0
-        static let springDamping: CGFloat = 3.50
+        static let springFrequency: CGFloat = 34.0
+        /// Raised from 3.50 — the old value let the rear shock settle slowly
+        /// after a hard landing, which reads as floatiness even once airtime
+        /// itself is under control.
+        static let springDamping: CGFloat = 4.20
         static let topOutStrapExtraLength: CGFloat = 0.2
         /// Live telescoping front fork suspension masses, damping, and travel limits.
         static let frontForkMass: CGFloat = 0.50
         static let frontForkAngularDamping: CGFloat = 1.20
         static let frontForkAxis = CGVector(dx: -0.414, dy: 0.910)
-        static let frontSpringFrequency: CGFloat = 30.0
-        static let frontSpringDamping: CGFloat = 3.50
-        static let frontLowerTravelLimit: CGFloat = -14.0
+        static let frontSpringFrequency: CGFloat = 34.0
+        /// Raised alongside springDamping above, for the same reason.
+        static let frontSpringDamping: CGFloat = 4.20
+        /// Widened from -14.0 to -34.0 — same rationale as the rear travel
+        /// above: real mechanical room for the front wheel to extend into a
+        /// drop rather than hitting its limit and separating outright.
+        static let frontLowerTravelLimit: CGFloat = -34.0
         static let frontUpperTravelLimit: CGFloat = 0.0
         /// Low chassis and swingarm friction prevents abrasive drag when compressing in scoops.
         /// High tire friction provides traction for wheel drive and climbing.
@@ -167,7 +195,22 @@ enum GameTuning {
         static let tireFriction: CGFloat = 0.90
         static let restitution: CGFloat = 0.00
         static let maximumSpeed: CGFloat = 2_200
-        static let maximumVerticalSpeed: CGFloat = 1_600
+        /// Raised alongside the heavier TrailRush gravity above (was 1,900,
+        /// originally 1,600), so a genuinely fast, punishing fall doesn't get
+        /// artificially speed-limited partway down.
+        static let maximumVerticalSpeed: CGFloat = 2_200
+        /// How much horizontal speed survives per second of airtime while
+        /// off the ground in TrailRush (MegaJump is exempt — its one big
+        /// jump is meant to carry speed the whole way across). 0.4 means
+        /// roughly 40% of horizontal speed remains after a full second
+        /// airborne; a bike with no wheel driving it can't hold flat-out
+        /// speed through the air the way it can while pedaling on the
+        /// ground, and this is what actually punishes carrying too much
+        /// speed into an unintended launch — a long hang now bleeds real
+        /// forward momentum, so the landing (and whatever comes right after
+        /// it) is met at a slower, more recoverable speed instead of the
+        /// same speed the bike left the ground with.
+        static let trailRushAirborneForwardDragRetentionPerSecond: CGFloat = 0.4
         static let maximumChassisAngularVelocity: CGFloat = 3.2
         static let groundedTolerance: CGFloat = 8
         /// A generous multiple of the bike's own resting size (wheels sit
@@ -590,6 +633,42 @@ enum GameTuning {
         static let maximumRelativeLeanAngle: CGFloat = .pi * 0.50
         static let minimumFrameStrikePitch: CGFloat = 1.20
         static let fallBelowTerrainDistance: CGFloat = 50
+
+        /// Hard-landing check, TrailRush only (MegaJump's single big jump is
+        /// specifically built with a long catch runway to land fast and
+        /// survive — this would fight that on purpose). Every existing
+        /// crash check is about attitude (pitch); none of them look at how
+        /// hard the bike actually hit the ground, so a perfectly level
+        /// landing from monster air currently survives no matter how much
+        /// vertical speed it carried. This closes that gap directly instead
+        /// of relying on gravity or drag to prevent the air from happening
+        /// in the first place.
+        ///
+        /// Two threshold *tiers*, chosen by whether the flight ever touched
+        /// an authorized launch zone (MountainBikeScene.currentFlightWasAuthorized):
+        /// - Unearned (accidental separation from an ordinary curve): the
+        ///   strict pair below. These should be rare now that BikeNode's
+        ///   surface snap catches most of them before they build real speed.
+        /// - Authorized (an actual lip/step-down the terrain built): the
+        ///   ForAuthorizedJump pair, much more lenient — TrailRush's terrain
+        ///   is mostly built from exactly these jumps (chute/stepDown-heavy
+        ///   grammars dominate several biomes), and each one's landing slope
+        ///   was already shaped for the speed its own takeoff produces. Only
+        ///   genuinely excessive chained speed into one of these should
+        ///   still crash.
+        ///
+        /// Within each tier, either condition crashes:
+        /// - Landing within landingTiltCrashAngle of level tolerates a hard
+        ///   fall up to the tier's *level* threshold — a real suspension
+        ///   compressing hard, but a controlled one.
+        /// - Landing tilted past that angle only tolerates the tier's much
+        ///   lower *IfTilted* threshold — the same impact that's fine level
+        ///   is a crash if the bike wasn't square to the ground on arrival.
+        static let maximumSafeLandingVerticalSpeed: CGFloat = 1_1500
+        static let maximumSafeLandingVerticalSpeedIfTilted: CGFloat = 7000
+        static let maximumSafeLandingVerticalSpeedForAuthorizedJump: CGFloat = 1_8000
+        static let maximumSafeLandingVerticalSpeedForAuthorizedJumpIfTilted: CGFloat = 1_1500
+        static let landingTiltCrashAngle: CGFloat = 0.5
     }
 
     enum Display {
@@ -602,9 +681,9 @@ enum GameTuning {
         static let baseLookAhead: CGFloat = 120
         static let velocityLookAheadFactor: CGFloat = 0.18
         static let minimumLookAhead: CGFloat = 80
-        static let maximumLookAhead: CGFloat = 180
+        static let maximumLookAhead: CGFloat = 280
         static let verticalBias: CGFloat = 42
-        static let followResponsiveness: CGFloat = 5.5
+        static let followResponsiveness: CGFloat = 11.0
     }
 }
 

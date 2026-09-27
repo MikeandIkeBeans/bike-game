@@ -12,6 +12,12 @@ final class TerrainStreamController {
         let node: SKNode
         let sceneryNode: SKNode
         let terrainBodyIDs: Set<ObjectIdentifier>
+        /// x-ranges the generator itself authored as a launch — the
+        /// takeoff-through-landing span of a lip or step-down feature. This
+        /// is ground truth for "flight is expected here," queried by
+        /// isAuthorizedLaunchZone(at:) instead of anyone downstream having
+        /// to guess intent from the bike's instantaneous motion.
+        let launchRanges: [ClosedRange<CGFloat>]
 
         var startX: CGFloat { points.first?.x ?? 0 }
         var endX: CGFloat { points.last?.x ?? 0 }
@@ -465,7 +471,8 @@ final class TerrainStreamController {
             surfaceRuns: surfaceRuns,
             node: node,
             sceneryNode: makeSceneryNode(for: surfaceRuns, chunkIndex: index, biome: chunkBiome),
-            terrainBodyIDs: bodyIDs
+            terrainBodyIDs: bodyIDs,
+            launchRanges: generated.launchRanges
         )
         return (chunk, generated.cursor)
     }
@@ -473,7 +480,7 @@ final class TerrainStreamController {
     private func megaJumpSegments(
         forChunk chunkIndex: Int,
         from startingCursor: TerrainCursor
-    ) -> (segments: [TerrainSegment], cursor: TerrainCursor) {
+    ) -> (segments: [TerrainSegment], cursor: TerrainCursor, launchRanges: [ClosedRange<CGFloat>]) {
         let cycle = chunkIndex / 5
         let phase = chunkIndex % 5
         let ox = CGFloat(cycle) * 18100.0
@@ -614,13 +621,13 @@ final class TerrainStreamController {
             activeGrammar: .summitSpine,
             grammarFeatureCount: 0
         )
-        return (segments, nextCursor)
+        return (segments, nextCursor, [])
     }
 
     private func terrainSegments(
         forChunk chunkIndex: Int,
         from startingCursor: TerrainCursor
-    ) -> (segments: [TerrainSegment], cursor: TerrainCursor) {
+    ) -> (segments: [TerrainSegment], cursor: TerrainCursor, launchRanges: [ClosedRange<CGFloat>]) {
         if mapMode == .megaJump {
             return megaJumpSegments(forChunk: chunkIndex, from: startingCursor)
         }
@@ -665,21 +672,28 @@ final class TerrainStreamController {
                         isLinear: false
                     )
                 ],
-                exitCursor
+                exitCursor,
+                []
             )
         }
 
         var cursor = startingCursor
         var segments: [TerrainSegment] = []
+        var launchRanges: [ClosedRange<CGFloat>] = []
         for _ in 0..<GameTuning.Terrain.generatedFeaturesPerChunk {
             let feature = generatedFeature(from: cursor)
             segments.append(contentsOf: feature.segments)
+            if let launchRange = feature.launchRange {
+                launchRanges.append(launchRange)
+            }
             cursor = feature.cursor
         }
-        return (segments, cursor)
+        return (segments, cursor, launchRanges)
     }
 
-    private func generatedFeature(from cursor: TerrainCursor) -> (segments: [TerrainSegment], cursor: TerrainCursor) {
+    private func generatedFeature(
+        from cursor: TerrainCursor
+    ) -> (segments: [TerrainSegment], cursor: TerrainCursor, launchRange: ClosedRange<CGFloat>?) {
         let featureIndex = cursor.nextFeatureIndex
         let featureSeed = terrainSeed &+ (
             UInt64(featureIndex) &* 0xD134_2543_DE82_EF95
@@ -691,7 +705,7 @@ final class TerrainStreamController {
             random: &random
         )
         let kind = nextFeatureKind(from: cursor, grammar: grammar, random: &random)
-        let generated: (segments: [TerrainSegment], exit: CGPoint, exitSlope: CGFloat)
+        let generated: (segments: [TerrainSegment], exit: CGPoint, exitSlope: CGFloat, launchRange: ClosedRange<CGFloat>?)
 
         switch kind {
         case .flow:
@@ -722,7 +736,8 @@ final class TerrainStreamController {
                 grammar: grammar,
                 exit: generated.exit,
                 exitSlope: generated.exitSlope
-            )
+            ),
+            generated.launchRange
         )
     }
 
@@ -835,7 +850,7 @@ final class TerrainStreamController {
         from cursor: TerrainCursor,
         profile: DownhillFeatureProfile,
         random: inout DeterministicRandom
-    ) -> (segments: [TerrainSegment], exit: CGPoint, exitSlope: CGFloat) {
+    ) -> (segments: [TerrainSegment], exit: CGPoint, exitSlope: CGFloat, launchRange: ClosedRange<CGFloat>?) {
         let length = random.value(in: profile.length)
         let drop = random.value(in: profile.drop)
         let start = cursor.point
@@ -858,7 +873,8 @@ final class TerrainStreamController {
                 TerrainSegment(start: second, end: exit, startSlope: middleSlope, endSlope: exitSlope, isLinear: false)
             ],
             exit,
-            exitSlope
+            exitSlope,
+            nil
         )
     }
 
@@ -869,7 +885,7 @@ final class TerrainStreamController {
         from cursor: TerrainCursor,
         profile: DownhillChuteProfile,
         random: inout DeterministicRandom
-    ) -> (segments: [TerrainSegment], exit: CGPoint, exitSlope: CGFloat) {
+    ) -> (segments: [TerrainSegment], exit: CGPoint, exitSlope: CGFloat, launchRange: ClosedRange<CGFloat>?) {
         let length = random.value(in: profile.length)
         let drop = random.value(in: profile.drop)
         let start = cursor.point
@@ -898,14 +914,15 @@ final class TerrainStreamController {
                 TerrainSegment(start: compression, end: exit, startSlope: compressionSlope, endSlope: exitSlope, isLinear: false)
             ],
             exit,
-            exitSlope
+            exitSlope,
+            nil
         )
     }
 
     private func rollerFeature(
         from cursor: TerrainCursor,
         random: inout DeterministicRandom
-    ) -> (segments: [TerrainSegment], exit: CGPoint, exitSlope: CGFloat) {
+    ) -> (segments: [TerrainSegment], exit: CGPoint, exitSlope: CGFloat, launchRange: ClosedRange<CGFloat>?) {
         let profile = GameTuning.Terrain.rollerProfile
         let length = random.value(in: profile.length)
         let drop = random.value(in: profile.drop)
@@ -935,14 +952,15 @@ final class TerrainStreamController {
                 TerrainSegment(start: third, end: exit, startSlope: secondSlope, endSlope: exitSlope, isLinear: false)
             ],
             exit,
-            exitSlope
+            exitSlope,
+            nil
         )
     }
 
     private func lipFeature(
         from cursor: TerrainCursor,
         random: inout DeterministicRandom
-    ) -> (segments: [TerrainSegment], exit: CGPoint, exitSlope: CGFloat) {
+    ) -> (segments: [TerrainSegment], exit: CGPoint, exitSlope: CGFloat, launchRange: ClosedRange<CGFloat>?) {
         let profile = GameTuning.Terrain.lipProfile
         let length = random.value(in: profile.length)
         let drop = random.value(in: profile.drop)
@@ -1003,6 +1021,13 @@ final class TerrainStreamController {
             GameTuning.Terrain.maximumRollableUphillSlope
         )
         let exitSlope = GameTuning.Terrain.lipLandingRunoutSlope
+        // Authorized flight zone: from the crest (where the upward takeoff
+        // ramp begins) through the point the bike is meant to touch back
+        // down. A slower rider who never actually leaves the ground across
+        // this span is unaffected — this only changes behavior for a bike
+        // that separates from the surface, by telling it that separation
+        // was intended here.
+        let launchRange = crest.x...landingEntry.x
         return (
             [
                 TerrainSegment(start: start, end: approach, startSlope: cursor.slope, endSlope: troughSlope, isLinear: false),
@@ -1039,7 +1064,8 @@ final class TerrainStreamController {
                 )
             ],
             exit,
-            exitSlope
+            exitSlope,
+            launchRange
         )
     }
 
@@ -1050,7 +1076,7 @@ final class TerrainStreamController {
         from cursor: TerrainCursor,
         profile: DownhillStepDownProfile,
         random: inout DeterministicRandom
-    ) -> (segments: [TerrainSegment], exit: CGPoint, exitSlope: CGFloat) {
+    ) -> (segments: [TerrainSegment], exit: CGPoint, exitSlope: CGFloat, launchRange: ClosedRange<CGFloat>?) {
         let length = random.value(in: profile.length)
         let drop = random.value(in: profile.drop)
         let start = cursor.point
@@ -1114,6 +1140,11 @@ final class TerrainStreamController {
             y: landing.y
                 + (exitX - landing.x) * exitSlope
         )
+        // Authorized flight zone: from the crest through the landing point.
+        // Covers a fast rider's real airtime and a slower rider's continuous
+        // roll down the cliff face — both are the terrain's own intent here,
+        // not something to correct.
+        let launchRange = crest.x...landing.x
         return (
             [
                 TerrainSegment(start: start, end: approach, startSlope: cursor.slope, endSlope: troughSlope, isLinear: false),
@@ -1145,7 +1176,8 @@ final class TerrainStreamController {
                 TerrainSegment(start: landing, end: exit, startSlope: landingSlope, endSlope: exitSlope, isLinear: false)
             ],
             exit,
-            exitSlope
+            exitSlope,
+            launchRange
         )
     }
 
@@ -1386,6 +1418,20 @@ final class TerrainStreamController {
         guard let ySlope = surfaceTerrainSlope(at: x) else { return nil }
         let length = CGFloat(hypot(1, Double(ySlope)))
         return CGVector(dx: 1 / length, dy: ySlope / length)
+    }
+
+    /// True while `x` falls within a launch range the terrain generator
+    /// itself authored — the takeoff-through-landing span of a lip or
+    /// step-down feature. This is the terrain's own ground truth for
+    /// "flight is expected here," used instead of inferring intent from the
+    /// bike's instantaneous speed, slope, or velocity at the moment it
+    /// separates from the surface.
+    func isAuthorizedLaunchZone(at x: CGFloat) -> Bool {
+        let index = firstChunkIndex(atOrAfter: x)
+        guard index < terrainChunks.count else { return false }
+        let chunk = terrainChunks[index]
+        guard x >= chunk.startX else { return false }
+        return chunk.launchRanges.contains { $0.contains(x) }
     }
 
     func supportAngle(at x: CGFloat) -> CGFloat {

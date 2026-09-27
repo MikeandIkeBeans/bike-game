@@ -15,6 +15,7 @@
 		A10000000000000000000017 /* Resources/mountain-background.jpg in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000018 /* Resources/mountain-background.jpg */; };
 		A10000000000000000000019 /* BikeNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000001B /* BikeNode.swift */; };
 		A1000000000000000000001A /* TerrainStreamController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000001C /* TerrainStreamController.swift */; };
+		A1000000000000000000001D /* BikeFrameState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000001F /* BikeFrameState.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -27,6 +28,7 @@
 		A10000000000000000000018 /* Resources/mountain-background.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "Resources/mountain-background.jpg"; sourceTree = "<group>"; };
 		A1000000000000000000001B /* BikeNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BikeNode.swift; sourceTree = "<group>"; };
 		A1000000000000000000001C /* TerrainStreamController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerrainStreamController.swift; sourceTree = "<group>"; };
+		A1000000000000000000001F /* BikeFrameState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BikeFrameState.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -84,6 +86,7 @@
 				A10000000000000000000016 /* GameTuning.swift */,
 				A1000000000000000000001B /* BikeNode.swift */,
 				A1000000000000000000001C /* TerrainStreamController.swift */,
+				A1000000000000000000001F /* BikeFrameState.swift */,
 			);
 			path = Game;
 			sourceTree = "<group>";
@@ -163,6 +166,7 @@
 				A10000000000000000000005 /* GameTuning.swift in Sources */,
 				A10000000000000000000019 /* BikeNode.swift in Sources */,
 				A1000000000000000000001A /* TerrainStreamController.swift in Sources */,
+				A1000000000000000000001D /* BikeFrameState.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
